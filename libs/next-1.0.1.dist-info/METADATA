@@ -1,0 +1,33 @@
+Metadata-Version: 2.4
+Name: next
+Version: 1.0.1
+Summary: required code for sae.news
+Home-page: https://github.com/dheerajmpai/saenews/
+Download-URL: https://github.com/dheerajmpai/saenews/archive/v_033.tar.gz
+Author: saenews
+Author-email: contact@advaitlabs.com
+License: MIT
+Keywords: OPENCV,IMAGE PROCESSING,NEWS
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Topic :: Software Development :: Build Tools
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.4
+Classifier: Programming Language :: Python :: 3.5
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Requires-Dist: beautifulsoup4
+Requires-Dist: opencv-contrib-python
+Requires-Dist: Pillow
+Requires-Dist: matplotlib
+Requires-Dist: requests
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: download-url
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license
+Dynamic: requires-dist
+Dynamic: summary

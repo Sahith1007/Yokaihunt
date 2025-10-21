@@ -1,0 +1,1 @@
+# YieldCraft Game Design Document

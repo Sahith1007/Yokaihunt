@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# YokaiHunt
 
-## Getting Started
+Monorepo containing:
+- Frontend: Next.js (app/) + Phaser game (components/Game.tsx)
+- Backend API: Node/Express + socket.io + Colyseus (server/)
+- Database: Prisma ORM targeting Postgres (Railway)
+- Smart contracts: Algorand PyTeal (contracts/)
 
-First, run the development server:
+## Local development
+- Copy `.env.example` to `.env` and fill values.
+- Start backend: `npm run server` (listens on 4000)
+- Start frontend: `npm run dev` (Next.js on 3000)
+- Open http://localhost:3000
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Environment variables
+Place these in the respective platform dashboards.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Frontend (Vercel):
+- NEXT_PUBLIC_API_URL = https://your-backend.onrailway.app
+- NEXT_PUBLIC_SOCKET_URL = https://your-backend.onrailway.app
+- NEXT_PUBLIC_COLYSEUS_ENDPOINT = wss://your-backend.onrailway.app
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Backend (Railway service):
+- PORT = 4000 (Railway sets this automatically; code respects `PORT`)
+- DATABASE_URL = postgres://... (Railway Postgres URL)
+- JWT_SECRET = your-strong-secret
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Database (Railway Postgres):
+- Create a Postgres database and copy its `DATABASE_URL` into the backend service.
 
-## Learn More
+## Deploy: Backend → Railway
+1) Create a new Railway project and add a service from this repo.
+2) Set Start Command to: `npm run server`.
+3) Add variables: `DATABASE_URL`, `JWT_SECRET`. Railway sets `PORT`.
+4) Add a Postgres plugin (or separate service) and connect the `DATABASE_URL` to the backend.
+5) Run Prisma migrations from the service shell:
+   - `npm run prisma:generate`
+   - `npm run prisma:deploy`
+6) Once deployed, note the public backend URL. Example: `https://your-backend.up.railway.app`.
 
-To learn more about Next.js, take a look at the following resources:
+## Deploy: Frontend → Vercel
+1) Import the GitHub repo into Vercel.
+2) Framework Preset: Next.js (root).
+3) Set Environment Variables:
+   - `NEXT_PUBLIC_API_URL`
+   - `NEXT_PUBLIC_SOCKET_URL`
+   - `NEXT_PUBLIC_COLYSEUS_ENDPOINT`
+4) Deploy. The frontend will call the Railway backend.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Notes
+- socket.io CORS is permissive in dev; you can restrict origins in `server/index.js` for production.
+- If you modify Prisma schema, re-run `npm run prisma:generate` and deploy migrations (`npm run prisma:deploy`).
+- Colyseus matchmaking is exposed over the same backend URL.

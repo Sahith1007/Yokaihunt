@@ -1,0 +1,24 @@
+{
+  "pages": {
+    "/page": [
+      "static/chunks/6a673_next_dist_29f7e552._.js",
+      "static/chunks/yokaihunt_app_favicon_ico_mjs_2e68ec9e._.js",
+      "static/chunks/[root-of-the-server]__3149c2e9._.css",
+      "static/chunks/yokaihunt_app_layout_tsx_a99365b2._.js",
+      "static/chunks/6a673_next_dist_client_components_builtin_global-error_ccf79138.js",
+      "static/chunks/yokaihunt_components_Game_tsx_4442a9ce._.js",
+      "static/chunks/6a673_next_72058087._.js",
+      "static/chunks/yokaihunt_app_page_tsx_3041b25a._.js",
+      "static/chunks/yokaihunt_app_page_tsx_ccf79138._.js",
+      "static/chunks/[turbopack]_browser_dev_hmr-client_hmr-client_ts_0bf3dd63._.js",
+      "static/chunks/6a673_next_dist_compiled_react-dom_c12c38d5._.js",
+      "static/chunks/6a673_next_dist_compiled_next-devtools_index_50e3394f.js",
+      "static/chunks/6a673_next_dist_compiled_b950362c._.js",
+      "static/chunks/6a673_next_dist_client_7e1e9659._.js",
+      "static/chunks/6a673_next_dist_6a49675c._.js",
+      "static/chunks/6a673_@swc_helpers_cjs_fe1cd889._.js",
+      "static/chunks/yokaihunt_a0ff3932._.js",
+      "static/chunks/turbopack-yokaihunt_c51a50ad._.js"
+    ]
+  }
+}

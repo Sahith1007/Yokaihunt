@@ -1,0 +1,12 @@
+next-1.0.1.dist-info/INSTALLER,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+next-1.0.1.dist-info/METADATA,sha256=3Xl4ZKi1HRRS8OaraH_x3CeYqKMfEHEW0d2CuaCif70,1103
+next-1.0.1.dist-info/RECORD,,
+next-1.0.1.dist-info/REQUESTED,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0
+next-1.0.1.dist-info/WHEEL,sha256=_zCd3N1l69ArxyTb8rzEoP9TpbYXkqRFSNOD5OuxnTs,91
+next-1.0.1.dist-info/top_level.txt,sha256=CTGTN2JFaQLmaCI7aMYKpTDPgcOK462SON3p-j1L_GU,8
+saenews/__pycache__/sae2.cpython-313.pyc,,
+saenews/__pycache__/saenews.cpython-313.pyc,,
+saenews/__pycache__/utils.cpython-313.pyc,,
+saenews/sae2.py,sha256=pTweCNFgeCoaFW9_t6xIFi9I4qdpbofzpBzA0N0_D5o,8482
+saenews/saenews.py,sha256=7QNyGQ41KSdroltyeE5wc1izigwcLU0XwnqN4irL7HM,7048
+saenews/utils.py,sha256=YSVtl_RqtS6UvgzhTwABEjQ0hjeu9R0wgoj7kRGvGfU,1984
