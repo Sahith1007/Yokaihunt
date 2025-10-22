@@ -1,5 +1,10 @@
 import * as Phaser from "phaser";
 import { io, type Socket } from "socket.io-client";
+import { spawn as apiSpawn, catchPokemon as apiCatch } from "../../src/services/api";
+
+function capitalize(s: string) {
+  return (s || "").charAt(0).toUpperCase() + (s || "").slice(1);
+}
 
 export interface SceneConfig {
   tileSize: number;
@@ -26,6 +31,23 @@ export class GameScene extends Phaser.Scene {
   private myId?: string;
   private others: Map<string, Phaser.GameObjects.Sprite> = new Map();
   private lastSent = 0;
+
+  // Encounter state
+  private lastTileX?: number;
+  private lastTileY?: number;
+  private inEncounter = false;
+  private encounter?: any; // backend payload pokemon
+
+  // UI (sidebar)
+  private ui?: Phaser.GameObjects.Container;
+  private uiStatus?: Phaser.GameObjects.Text;
+  private uiCatchBtn?: Phaser.GameObjects.Rectangle;
+  private uiCatchLabel?: Phaser.GameObjects.Text;
+  private uiRunBtn?: Phaser.GameObjects.Rectangle;
+  private uiRunLabel?: Phaser.GameObjects.Text;
+  private uiSpriteKey?: string;
+  private uiSpriteImg?: Phaser.GameObjects.Image;
+  private lastStatusAt = 0;
 
   constructor() {
     super("GameScene");
@@ -154,6 +176,9 @@ export class GameScene extends Phaser.Scene {
       D: Phaser.Input.Keyboard.KeyCodes.D,
     }) as Record<"W" | "A" | "S" | "D", Phaser.Input.Keyboard.Key> | undefined;
 
+    // Sidebar UI
+    this.createSidebarUI();
+
     // Multiplayer socket
     this.initMultiplayer();
   }
@@ -186,12 +211,198 @@ export class GameScene extends Phaser.Scene {
       body.setVelocity((vx / len) * speed, (vy / len) * speed);
     }
 
+    // Tile enter detection for encounters
+    const { tileSize } = this.configData;
+    const tileX = Math.floor(this.player.x / tileSize);
+    const tileY = Math.floor(this.player.y / tileSize);
+    if (tileX !== this.lastTileX || tileY !== this.lastTileY) {
+      this.lastTileX = tileX;
+      this.lastTileY = tileY;
+      this.maybeTriggerEncounter(tileX, tileY);
+    }
+
+    // Keep UI pinned
+    if (this.ui) this.ui.setScrollFactor(0);
+
     // Throttled position sync
     const now = this.time.now;
     if (this.socket && now - this.lastSent > 100) {
       this.socket.emit("move", { x: this.player.x, y: this.player.y });
       this.lastSent = now;
     }
+  }
+
+  private async maybeTriggerEncounter(tileX: number, tileY: number) {
+    if (this.inEncounter) return;
+    const tile = this.groundLayer.getTileAt(tileX, tileY);
+    if (!tile) return;
+    // grass tile index = 0 in our generated tilesheet
+    if (tile.index !== 0) return;
+
+    // 15% encounter chance on entering grass tile
+    if (Math.random() > 0.15) {
+      this.statusOnce("Couldn't find anything.\nTry moving to another spot.", 900);
+      return;
+    }
+
+    try {
+      const { pokemon } = await apiSpawn();
+      this.inEncounter = true;
+      this.encounter = pokemon;
+      this.showSidebarEncounter(pokemon);
+    } catch {
+      this.statusOnce('Nothing here...', 800);
+    }
+  }
+
+  private async showSidebarEncounter(pokemon: any) {
+    this.setStatus(`A wild ${capitalize(pokemon.name)} appeared!`);
+
+    // load sprite to sidebar
+    const key = `pkmn-${pokemon.id}`;
+    const url = pokemon.sprite;
+    if (url && !this.textures.exists(key)) {
+      await new Promise<void>((resolve) => {
+        this.load.once(Phaser.Loader.Events.COMPLETE, () => resolve());
+        this.load.image(key, url);
+        this.load.start();
+      });
+    }
+    this.uiSpriteKey = key;
+    if (this.uiSpriteImg) this.uiSpriteImg.destroy();
+    if (this.textures.exists(key)) {
+      const panel = this.ui as Phaser.GameObjects.Container;
+      const imgX = (this.scale.width - 240) + 120; // center in sidebar 240px wide
+      const imgY = 200;
+      this.uiSpriteImg = this.add.image(imgX, imgY, key).setScrollFactor(0).setScale(2);
+      panel.add(this.uiSpriteImg);
+    }
+
+    // show buttons
+    this.setCatchButtonsVisible(true);
+  }
+
+  private setCatchButtonsVisible(show: boolean) {
+    this.uiCatchBtn?.setVisible(show).setInteractive(show ? { useHandCursor: true } : undefined);
+    this.uiCatchLabel?.setVisible(show);
+    this.uiRunBtn?.setVisible(show).setInteractive(show ? { useHandCursor: true } : undefined);
+    this.uiRunLabel?.setVisible(show);
+  }
+
+  private setStatus(text: string) {
+    if (this.uiStatus) this.uiStatus.setText(text);
+  }
+
+  private statusOnce(text: string, cooldownMs = 800) {
+    const now = this.time.now;
+    if (now - this.lastStatusAt < cooldownMs) return;
+    this.lastStatusAt = now;
+    this.setStatus(text);
+  }
+
+  private createSidebarUI() {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const sidebarW = 240;
+    const container = this.add.container(0, 0).setDepth(1000);
+    container.setScrollFactor(0);
+
+    // backdrop
+    const bg = this.add.rectangle(w - sidebarW, 0, sidebarW, h, 0xe9f1f7, 1).setOrigin(0);
+    const top = this.add.rectangle(w - sidebarW, 0, sidebarW, 50, 0xd0e4f2, 1).setOrigin(0);
+    container.add(bg); container.add(top);
+
+    // title
+    const title = this.add.text(w - sidebarW + 12, 12, 'Grass Search', { fontSize: '18px', color: '#111' });
+    container.add(title);
+
+    // status text
+    const status = this.add.text(w - sidebarW + 12, 70, 'Move into the grass to search...', { fontSize: '16px', color: '#222', wordWrap: { width: sidebarW - 24 } });
+    container.add(status);
+    this.uiStatus = status;
+
+    // Catch button (hidden by default)
+    const btnW = 180, btnH = 40;
+    const catchBtn = this.add.rectangle(w - sidebarW + 30, h - 120, btnW, btnH, 0x2d6a4f).setOrigin(0).setVisible(false);
+    const catchLbl = this.add.text(catchBtn.x + 58, catchBtn.y + 10, 'Catch', { fontSize: '18px', color: '#fff' }).setVisible(false);
+    container.add(catchBtn); container.add(catchLbl);
+    catchBtn.on('pointerup', async () => {
+      if (!this.encounter) return;
+      catchBtn.disableInteractive();
+      const p = this.encounter;
+      try {
+        const hp = (p.stats || []).find((s: any) => s.name === 'hp')?.value ?? 35;
+        const resp = await apiCatch({ pokemonId: p.id, name: p.name, hp, base_experience: p.base_experience ?? 0 });
+        if (resp?.success) {
+          this.storeCaughtLocal(resp.pokemon || p);
+          this.setStatus(`Gotcha! You caught ${capitalize(p.name)}!`);
+        } else {
+          this.setStatus('The Pokémon escaped!');
+        }
+      } catch {
+        this.setStatus('Failed to throw Poké Ball.');
+      } finally {
+        this.endEncounter();
+      }
+    });
+    this.uiCatchBtn = catchBtn; this.uiCatchLabel = catchLbl;
+
+    // Run button
+    const runBtn = this.add.rectangle(w - sidebarW + 30, h - 70, btnW, btnH, 0x6c757d).setOrigin(0).setVisible(false);
+    const runLbl = this.add.text(runBtn.x + 70, runBtn.y + 10, 'Run', { fontSize: '18px', color: '#fff' }).setVisible(false);
+    container.add(runBtn); container.add(runLbl);
+    runBtn.on('pointerup', () => {
+      this.setStatus('Got away safely.');
+      this.endEncounter();
+    });
+    this.uiRunBtn = runBtn; this.uiRunLabel = runLbl;
+
+    // D-Pad controls
+    const centerX = w - sidebarW + sidebarW/2;
+    const baseY = h - 200;
+    const sq = 36;
+    const makeBtn = (x: number, y: number, label: string, move: () => void) => {
+      const r = this.add.rectangle(x, y, sq, sq, 0xadb5bd).setOrigin(0.5).setInteractive({ useHandCursor: true });
+      const t = this.add.text(x - 6, y - 10, label, { fontSize: '20px', color: '#fff' });
+      container.add(r); container.add(t);
+      r.on('pointerdown', () => {
+        move();
+      });
+    };
+    makeBtn(centerX, baseY - sq, '▲', () => this.nudgePlayer(0, -1));
+    makeBtn(centerX, baseY + sq, '▼', () => this.nudgePlayer(0, 1));
+    makeBtn(centerX - sq, baseY, '◀', () => this.nudgePlayer(-1, 0));
+    makeBtn(centerX + sq, baseY, '▶', () => this.nudgePlayer(1, 0));
+
+    this.ui = container;
+  }
+
+  private nudgePlayer(dx: number, dy: number) {
+    if (!this.player?.body) return;
+    const { tileSize } = this.configData;
+    const body = this.player.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(0, 0);
+    this.player.x += dx * tileSize;
+    this.player.y += dy * tileSize;
+    const tileX = Math.floor(this.player.x / tileSize);
+    const tileY = Math.floor(this.player.y / tileSize);
+    this.maybeTriggerEncounter(tileX, tileY);
+  }
+
+  private endEncounter() {
+    this.inEncounter = false;
+    this.encounter = undefined;
+    this.setCatchButtonsVisible(false);
+    if (this.uiSpriteImg) { this.uiSpriteImg.destroy(); this.uiSpriteImg = undefined; }
+  }
+
+  private storeCaughtLocal(pokemon: any) {
+    try {
+      const key = 'caught_pokemon';
+      const arr = JSON.parse(localStorage.getItem(key) || '[]');
+      arr.push({ id: pokemon.id, name: pokemon.name, sprite: pokemon.sprite, caughtAt: Date.now() });
+      localStorage.setItem(key, JSON.stringify(arr));
+    } catch {}
   }
 
   private initMultiplayer() {

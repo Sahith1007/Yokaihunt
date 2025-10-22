@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.17.1",
+    "axios": "^1.12.2",
     "bcryptjs": "^2.4.3",
     "colyseus": "^0.14.17",
     "express": "^5.1.0",

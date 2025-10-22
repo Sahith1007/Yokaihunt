@@ -3,7 +3,7 @@
 let PrismaClient;
 try {
   // eslint-disable-next-line import/no-unresolved, global-require
-  ({ PrismaClient } = require("../app/generated/prisma"));
+  ({ PrismaClient } = require("../../node_modules/.prisma/client"));
 } catch (e) {
   // eslint-disable-next-line global-require
   ({ PrismaClient } = require("@prisma/client"));

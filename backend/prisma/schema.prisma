@@ -1,0 +1,32 @@
+# Prisma schema for YokaiHunt backend
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Player {
+  id        Int       @id @default(autoincrement())
+  username  String    @unique
+  pokemons  Pokemon[]
+  createdAt DateTime  @default(now())
+}
+
+// Note: SQLite has no native array type, so we store types as JSON string
+model Pokemon {
+  id         Int      @id @default(autoincrement())
+  name       String
+  sprite     String?
+  typesJson  String   @default("[]")
+  baseExp    Int?
+  hp         Int?
+  attack     Int?
+  defense    Int?
+  playerId   Int
+  player     Player   @relation(fields: [playerId], references: [id])
+  createdAt  DateTime @default(now())
+}
