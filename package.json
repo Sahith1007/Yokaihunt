@@ -11,21 +11,29 @@
     "@prisma/client": "^6.17.1",
     "axios": "^1.12.2",
     "bcryptjs": "^2.4.3",
-    "colyseus": "^0.14.17",
+    "colyseus": "^0.16.5",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.20.0",
+    "nanoid": "^5.1.6",
     "phaser": "^3.90.0",
     "prisma": "^6.17.1",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1"
   },
+  "overrides": {
+    "@colyseus/core": {
+      "nanoid": "^3.3.8"
+    }
+  },
   "scripts": {
-    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:server\"",
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
     "dev:frontend": "cd frontend && npx next dev",
-    "dev:server": "cd server && npx nodemon index.js",
+    "dev:backend": "cd backend && npx nodemon --watch routes --watch server.js --ext js,json server.js",
     "build": "cd frontend && npx next build",
-    "start": "cd frontend && npx next start",
-    "server": "node server/index.js",
+    "start": "npm run start:frontend",
+    "start:frontend": "cd frontend && npx next start",
+    "start:backend": "cd backend && node server.js",
     "prisma:generate": "npx prisma generate",
     "prisma:migrate": "npx prisma migrate dev --name init",
     "prisma:deploy": "npx prisma migrate deploy"
