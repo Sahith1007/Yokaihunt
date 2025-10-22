@@ -1,31 +1,28 @@
+import express from "express";
+import cors from "cors";
 import dotenv from "dotenv";
+import "./db.js";
+import pokemonRoutes from "./routes/pokemon.js";
+
 dotenv.config();
-import express from 'express';
-import cors from 'cors';
-import mongoose from "mongoose";
-import pokemonRoutes from './routes/pokemonRoutes.js';
-import playerRoutes from './routes/playerRoutes.js';
-import inventoryRoutes from './routes/inventoryRoutes.js';
-
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 4000;
 
-// MongoDB connection
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch(err => console.error("MongoDB Error:", err));
-
+// Middleware
 app.use(cors());
 app.use(express.json());
 
-app.use('/api', playerRoutes);
-app.use('/api', inventoryRoutes);
-app.use('/api', pokemonRoutes);
-
-app.get('/health', (_req, res) => {
-  res.json({ ok: true, uptime: process.uptime() });
+// Health check
+app.get("/health", (req, res) => {
+  res.json({ status: "OK", message: "YokaiHunt Backend is running!", uptime: process.uptime() });
 });
 
+// Routes
+app.use("/api", pokemonRoutes);
+
+// Start server
 app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`✅ Backend running on port ${PORT}`);
+  console.log(`🏥 Health check: http://localhost:${PORT}/health`);
+  console.log(`🎮 API endpoints: http://localhost:${PORT}/api`);
 });

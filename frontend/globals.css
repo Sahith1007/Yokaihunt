@@ -24,3 +24,18 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* UI additions for map taskbar and arrows */
+.taskbar { display:flex; align-items:center; justify-content:center; gap:24px; padding:14px; background:#2a2b31; border-radius:10px; }
+.pad { display:grid; grid-template-rows:auto auto auto; gap:8px; }
+.middle { display:grid; grid-template-columns:auto auto auto; align-items:center; gap:8px; }
+.arrow { width:36px; height:36px; border-radius:6px; border:1px solid #434653; background:linear-gradient(#30333f,#252833); color:#cfd3dc; display:flex; align-items:center; justify-content:center; }
+.arrow.up::after{content:'\25B2'}
+.arrow.down::after{content:'\25BC'}
+.arrow.left::after{content:'\25C0'}
+.arrow.right::after{content:'\25B6'}
+.trainer { width:36px; height:36px; border-radius:6px; background:#5865f2; border:1px solid #434653; }
+.kbd { font-size:12px; color:#c9c7d1; }
+
+/* Pixelated Pokémon images */
+.pixelated { image-rendering: -moz-crisp-edges; image-rendering: -webkit-crisp-edges; image-rendering: pixelated; image-rendering: crisp-edges; }

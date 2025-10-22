@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+**/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -41,3 +42,16 @@ yarn-error.log*
 next-env.d.ts
 
 /app/generated/prisma
+
+# Backend specific
+/backend/node_modules
+/backend/build
+/backend/dist
+*.db
+*.sqlite
+
+# Frontend specific
+/frontend/node_modules
+/frontend/.next
+/frontend/build
+/frontend/dist

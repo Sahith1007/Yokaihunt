@@ -3,6 +3,7 @@
 import * as Phaser from "phaser";
 import { useEffect, useRef } from "react";
 import { GameScene } from "../lib/phaser/GameScene";
+import { BattleScene } from "../lib/phaser/BattleScene";
 
 interface GameProps {
   width?: number;
@@ -14,6 +15,9 @@ interface GameProps {
   playerSpeed?: number;
   initialX?: number;
   initialY?: number;
+  onPokemonSpotted?: (pokemon: { name: string; spriteUrl: string; pokeId: number }) => void;
+  onPokemonCleared?: () => void;
+  playerPokemon?: any;
 }
 
 export default function Game({
@@ -26,6 +30,9 @@ export default function Game({
   playerSpeed = 200,
   initialX,
   initialY,
+  onPokemonSpotted,
+  onPokemonCleared,
+  playerPokemon,
 }: GameProps) {
   const gameRef = useRef<HTMLDivElement>(null);
   const phaserGameRef = useRef<Phaser.Game | null>(null);
@@ -46,7 +53,7 @@ export default function Game({
           debug: false,
         },
       },
-      scene: GameScene,
+      scene: [GameScene, BattleScene],
       scale: {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -64,10 +71,17 @@ export default function Game({
         playerSpeed,
         initialX,
         initialY,
+        onPokemonSpotted,
+        onPokemonCleared,
+        playerPokemon,
       };
       const mgr = game.scene;
-      if (mgr.isActive("GameScene")) mgr.restart("GameScene", data);
-      else mgr.start("GameScene", data);
+      if (mgr.isActive("GameScene")) {
+        mgr.stop("GameScene");
+        mgr.start("GameScene", data);
+      } else {
+        mgr.start("GameScene", data);
+      }
     };
 
     if (phaserGameRef.current.isBooted) startOrRestart();
@@ -79,7 +93,7 @@ export default function Game({
         phaserGameRef.current = null;
       }
     };
-  }, [width, height, tileSize, mapWidth, mapHeight, playerSpeed, initialX, initialY]);
+  }, [width, height, tileSize, mapWidth, mapHeight, playerSpeed, initialX, initialY, onPokemonSpotted, onPokemonCleared, playerPokemon]);
 
   return (
     <div
