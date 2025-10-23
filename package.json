@@ -8,17 +8,20 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
+    "@blockshake/defly-connect": "^1.2.1",
+    "@perawallet/connect": "^1.4.2",
     "@prisma/client": "^6.17.1",
+    "@randlabs/myalgo-connect": "^1.4.2",
     "axios": "^1.12.2",
     "bcryptjs": "^2.4.3",
     "colyseus": "^0.14.17",
     "express": "^5.1.0",
+    "framer-motion": "^11.11.10",
     "jsonwebtoken": "^9.0.2",
     "phaser": "^3.90.0",
     "prisma": "^6.17.1",
     "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1",
-    "framer-motion": "^11.11.10"
+    "socket.io-client": "^4.8.1"
   },
   "scripts": {
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:server\"",

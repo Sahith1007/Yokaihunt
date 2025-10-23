@@ -99,7 +99,14 @@ export class SpawnManager extends Phaser.Events.EventEmitter {
   start() {
     this.topUpSpawns(true);
     this.spawnTimer?.remove(false);
-    this.spawnTimer = this.scene.time.addEvent({ delay: 3500, loop: true, callback: () => this.topUpSpawns(false) });
+    const scheduleNext = () => {
+      const delay = Phaser.Math.Between(20000, 40000);
+      this.spawnTimer = this.scene.time.addEvent({ delay, loop: false, callback: () => {
+        this.topUpSpawns(false);
+        scheduleNext();
+      }});
+    };
+    scheduleNext();
   }
 
   stop() {

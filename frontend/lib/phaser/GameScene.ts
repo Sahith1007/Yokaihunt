@@ -18,6 +18,7 @@ export interface SceneConfig {
   initialY?: number;
   onPokemonSpotted?: (pokemon: { name: string; spriteUrl: string; pokeId: number }) => void;
   onPokemonCleared?: () => void;
+  onSpawnsUpdate?: (spawns: { key: string; name: string; pokeId: number; spriteUrl: string; position: { x: number; y: number } }[]) => void;
   playerPokemon?: any; // Selected Pokémon for battle
 }
 
@@ -57,9 +58,7 @@ export class GameScene extends Phaser.Scene {
   // Spawns (managed by SpawnManager)
   private spawnManager?: SpawnManager;
 
-  // UI (sidebar)
-  private ui?: Phaser.GameObjects.Container;
-  private uiStatus?: Phaser.GameObjects.Text;
+  // UI (sidebar) - removed in favor of React/Next UI
   private lastStatusAt = 0;
 
   // Minimap
@@ -212,8 +211,6 @@ export class GameScene extends Phaser.Scene {
     }) as Record<"W" | "A" | "S" | "D", Phaser.Input.Keyboard.Key> | undefined;
     this.enterKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
 
-    // Sidebar UI
-    this.createSidebarUI();
 
     // Multiplayer socket (kept from your original)
     this.initMultiplayer();
@@ -229,8 +226,14 @@ export class GameScene extends Phaser.Scene {
     this.spawnManager.on("spawned", (rec: any) => {
       this.addMiniMarker(rec.key, rec.position.x, rec.position.y);
       this.statusOnce(`A wild ${capitalize(rec.name)} appeared near you!`, 800);
+      this.configData.onPokemonSpotted?.({ name: rec.name, spriteUrl: rec.spriteUrl, pokeId: rec.pokeId });
+      this.pushSpawnsToUI();
     });
-    this.spawnManager.on("despawned", (key: string) => this.removeMiniMarker(key));
+    this.spawnManager.on("despawned", (_key: string) => {
+      this.removeMiniMarker(_key);
+      if (this.spawnManager!.getActiveSpawns().length === 0) this.configData.onPokemonCleared?.();
+      this.pushSpawnsToUI();
+    });
     this.spawnManager.on("spawnClicked", async (key: string) => {
       await this.startBattleFromKey(key);
     });
@@ -281,7 +284,6 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Keep UI + minimap pinned
-    if (this.ui) this.ui.setScrollFactor(0);
     if (this.mini) this.mini.setScrollFactor(0);
 
     // Throttled position sync (multiplayer)
@@ -303,36 +305,12 @@ export class GameScene extends Phaser.Scene {
 
 
   // ---- UI helpers ----
-  private createSidebarUI() {
-    const w = this.scale.width;
-    const h = this.scale.height;
-    const sidebarW = 240;
-    const container = this.add.container(0, 0).setDepth(1000);
-    container.setScrollFactor(0);
 
-    const bg = this.add.rectangle(w - sidebarW, 0, sidebarW, h, 0xe9f1f7, 1).setOrigin(0);
-    const top = this.add.rectangle(w - sidebarW, 0, sidebarW, 50, 0xd0e4f2, 1).setOrigin(0);
-    container.add(bg); container.add(top);
-
-    const title = this.add.text(w - sidebarW + 12, 12, 'Field Report', { fontSize: '18px', color: '#111' });
-    container.add(title);
-
-    const status = this.add.text(w - sidebarW + 12, 70, 'Walk around the grass. Pokémon spawn every 3–8s. Press ENTER when near one!', { fontSize: '16px', color: '#222', wordWrap: { width: sidebarW - 24 } });
-    container.add(status);
-    this.uiStatus = status;
-
-    this.ui = container;
-  }
-
-  private setStatus(text: string) {
-    if (this.uiStatus) this.uiStatus.setText(text);
-  }
-
-  private statusOnce(text: string, cooldownMs = 800) {
+  private statusOnce(_text: string, cooldownMs = 800) {
     const now = this.time.now;
     if (now - this.lastStatusAt < cooldownMs) return;
     this.lastStatusAt = now;
-    this.setStatus(text);
+    // React sidebar now handles messaging
   }
 
   // ---- Multiplayer (kept) ----
@@ -583,7 +561,6 @@ export class GameScene extends Phaser.Scene {
   private applyBiome(id: BiomeId) {
     const def = BIOMES[id];
     if (!def) return;
-    // color tween only (particles disabled for compatibility)
     if (this.envOverlay) {
       const target = def.environmentColor;
       const from = (this.envOverlay.fillColor ?? 0xffffff) as number;
@@ -599,5 +576,18 @@ export class GameScene extends Phaser.Scene {
         this.envOverlay!.setFillStyle(hex, 0.08);
       }});
     }
+  }
+
+  private pushSpawnsToUI() {
+    if (!this.configData.onSpawnsUpdate || !this.spawnManager) return;
+    const spawns = this.spawnManager.getActiveSpawns().map((r: any) => ({
+      key: r.key,
+      name: r.name,
+      pokeId: r.pokeId,
+      spriteUrl: r.spriteUrl,
+      position: r.position,
+      distance: Phaser.Math.Distance.Between(this.player.x, this.player.y, r.position.x, r.position.y),
+    }));
+    this.configData.onSpawnsUpdate(spawns);
   }
 }

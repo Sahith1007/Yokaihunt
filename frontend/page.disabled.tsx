@@ -1,49 +1,58 @@
-import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
-import Taskbar from "../../components/HUD/Taskbar";
-import Sidebar from "../../components/HUD/Sidebar";
-import InventoryModal from "../../components/Modals/InventoryModal";
-import TeamModal from "../../components/Modals/TeamModal";
-import WalletButton from "../../components/WalletButton";
+"use client";
 
-const Game = dynamic(() => import("../../components/Game"), { ssr: false });
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import Taskbar from "./components/HUD/Taskbar";
+import Sidebar from "./components/HUD/Sidebar";
+import InventoryModal from "./components/Modals/InventoryModal";
+import TeamModal from "./components/Modals/TeamModal";
+import WalletButton from "./components/WalletButton";
+import { fetchPlayerPokemon, getPlayerInventory, type PlayerPokemon } from "./lib/api/pokemonApi";
+
+const Game = dynamic(() => import("./components/Game"), { ssr: false });
+
+type PlayerPos = { posX: number; posY: number } | null;
+
+type Balls = { pokeball: number; greatball: number; ultraball: number; masterball: number };
+
+type SpottedPokemon = { name: string; spriteUrl: string; pokeId: number } | null;
+
+type Nearby = { key: string; name: string; pokeId: number; spriteUrl: string; distance: number }[];
 
 export default function Home() {
-  const [player, setPlayer] = useState(null);
-  const [balls, setBalls] = useState({ pokeball: 0, greatball: 0, ultraball: 0, masterball: 0 });
-  const [spottedPokemon, setSpottedPokemon] = useState(null);
-  const [nearby, setNearby] = useState([]);
-  const [playerPokemon, setPlayerPokemon] = useState([]);
-  const [selectedPokemon, setSelectedPokemon] = useState(null);
+  const [player, setPlayer] = useState<PlayerPos>(null);
+  const [balls, setBalls] = useState<Balls>({ pokeball: 0, greatball: 0, ultraball: 0, masterball: 0 });
+  const [spottedPokemon, setSpottedPokemon] = useState<SpottedPokemon>(null);
+  const [nearby, setNearby] = useState<Nearby>([]);
+  const [playerPokemon, setPlayerPokemon] = useState<PlayerPokemon[]>([]);
+  const [selectedPokemon, setSelectedPokemon] = useState<PlayerPokemon | null>(null);
   const [showInventory, setShowInventory] = useState(false);
   const [showTeam, setShowTeam] = useState(false);
 
   useEffect(() => {
-    // player position
     fetch("http://localhost:4000/api/player")
       .then(async (r) => {
         const data = await r.json();
-        if (r.ok) setPlayer({ posX: data?.progress?.posX ?? 64, posY: data?.progress?.posY ?? 64 });
+        if (r.ok)
+          setPlayer({ posX: data?.progress?.posX ?? 64, posY: data?.progress?.posY ?? 64 });
       })
       .catch(() => {});
 
-    // player pokemon + bag
-    import("../../lib/api/pokemonApi").then(async (mod) => {
-      try {
-        const mons = await mod.fetchPlayerPokemon();
-        setPlayerPokemon(mons || []);
-        if ((mons || []).length && !selectedPokemon) setSelectedPokemon(mons[0]);
-      } catch {}
-      try {
-        const bag = await mod.getPlayerInventory();
-        setBalls(bag || { pokeball: 0, greatball: 0, ultraball: 0, masterball: 0 });
-      } catch {}
+    fetchPlayerPokemon().then((pokemon) => {
+      setPlayerPokemon(pokemon);
+      if (pokemon.length > 0 && !selectedPokemon) {
+        setSelectedPokemon(pokemon[0]);
+      }
     });
+
+    getPlayerInventory().then(setBalls);
   }, []);
 
   return (
     <div className="w-screen h-screen overflow-hidden bg-[#0f1116] text-white">
       <div className="grid grid-cols-[80vw_20vw] grid-rows-[1fr] w-screen h-screen">
+        {/* Map Area */}
         <section className="relative w-full h-full bg-black/20">
           <div className="absolute inset-0">
             <Game
@@ -55,10 +64,12 @@ export default function Home() {
               initialY={player?.posY}
               onPokemonSpotted={setSpottedPokemon}
               onPokemonCleared={() => setSpottedPokemon(null)}
-              onSpawnsUpdate={setNearby}
+              onSpawnsUpdate={setNearby as any}
               playerPokemon={selectedPokemon}
             />
           </div>
+
+          {/* Bottom HUD Taskbar */}
           <Taskbar
             onInventory={() => setShowInventory(true)}
             onTeam={() => setShowTeam(true)}
@@ -67,6 +78,7 @@ export default function Home() {
           />
         </section>
 
+        {/* Right Sidebar */}
         <aside className="relative w-full h-full border-l border-white/5 bg-[#151821]">
           <Sidebar
             spotted={spottedPokemon}
@@ -79,8 +91,11 @@ export default function Home() {
         </aside>
       </div>
 
+      {/* Modals */}
       <InventoryModal open={showInventory} onClose={() => setShowInventory(false)} />
       <TeamModal open={showTeam} team={playerPokemon.slice(0, 6)} onClose={() => setShowTeam(false)} />
+
+      {/* Global Wallet Button (fixed bottom-right) */}
       <WalletButton />
     </div>
   );
