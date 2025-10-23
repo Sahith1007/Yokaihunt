@@ -17,7 +17,8 @@
     "phaser": "^3.90.0",
     "prisma": "^6.17.1",
     "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "framer-motion": "^11.11.10"
   },
   "scripts": {
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:server\"",
