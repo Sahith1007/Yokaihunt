@@ -1,6 +1,9 @@
 import * as Phaser from "phaser";
 import { io, type Socket } from "socket.io-client";
 import { catchPokemon as apiCatch } from "../api/api";
+import { SpawnManager } from "../spawnUtils";
+import { ZONE_TILES, generateZones } from "../mapZones";
+import { BIOMES, type BiomeId, type StructureDef, type StructureType } from "../biomes";
 
 function capitalize(s: string) {
   return (s || "").charAt(0).toUpperCase() + (s || "").slice(1);
@@ -43,17 +46,40 @@ export class GameScene extends Phaser.Scene {
   private playerSpeed = 200;
   private socket?: Socket;
   private myId?: string;
+
+  // Cached map dimensions
+  private mapWidthTiles = 0;
+  private mapHeightTiles = 0;
+  private tileSizePx = 32;
   private others: Map<string, Phaser.GameObjects.Sprite> = new Map();
   private lastSent = 0;
 
-  // Spawns on the map
-  private spawns: Map<string, SpawnRecord> = new Map();
-  private spawnTimer?: Phaser.Time.TimerEvent;
+  // Spawns (managed by SpawnManager)
+  private spawnManager?: SpawnManager;
 
   // UI (sidebar)
   private ui?: Phaser.GameObjects.Container;
   private uiStatus?: Phaser.GameObjects.Text;
   private lastStatusAt = 0;
+
+  // Minimap
+  private mini?: Phaser.GameObjects.Container;
+  private miniGfx?: Phaser.GameObjects.Graphics;
+  private miniMarkers?: Phaser.GameObjects.Container;
+  private miniHighlight?: Phaser.GameObjects.Graphics;
+  private miniBuildings?: Phaser.GameObjects.Container;
+  private miniW = 160;
+  private miniH = 160;
+
+  // Toast notification
+  private toast?: Phaser.GameObjects.Text;
+
+  // Structures
+  private structures: StructureDef[] = [];
+  private insideStructure: { active: boolean; type: StructureType | null } = { active: false, type: null };
+
+  // Environment overlay (no particles to avoid runtime incompat)
+  private envOverlay?: Phaser.GameObjects.Rectangle;
 
   constructor() {
     super("GameScene");
@@ -115,6 +141,9 @@ export class GameScene extends Phaser.Scene {
 
   create() {
     const { tileSize, mapWidth, mapHeight } = this.configData;
+    this.tileSizePx = tileSize;
+    this.mapWidthTiles = mapWidth;
+    this.mapHeightTiles = mapHeight;
 
     // Create a blank tilemap and a dynamic layer using our generated spritesheet
     const map = this.make.tilemap({
@@ -189,8 +218,38 @@ export class GameScene extends Phaser.Scene {
     // Multiplayer socket (kept from your original)
     this.initMultiplayer();
 
-    // Start spawn loop (first spawn scheduled randomly 10–20s)
-    this.scheduleNextSpawn();
+    // Environment overlay
+    this.envOverlay = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0xffffff, 0.08).setOrigin(0).setScrollFactor(0).setDepth(900);
+
+    // Minimap overlay (no grid lines)
+    this.createMiniMap();
+
+    // Zone-aware spawn manager
+    this.spawnManager = new SpawnManager(this, tileSize, mapWidth, mapHeight);
+    this.spawnManager.on("spawned", (rec: any) => {
+      this.addMiniMarker(rec.key, rec.position.x, rec.position.y);
+      this.statusOnce(`A wild ${capitalize(rec.name)} appeared near you!`, 800);
+    });
+    this.spawnManager.on("despawned", (key: string) => this.removeMiniMarker(key));
+    this.spawnManager.on("spawnClicked", async (key: string) => {
+      await this.startBattleFromKey(key);
+    });
+    this.spawnManager.on("zoneChanged", (z: any) => {
+      this.highlightMiniZone();
+      const czx = (z.col * ZONE_TILES + ZONE_TILES / 2) * tileSize;
+      const czy = (z.row * ZONE_TILES + ZONE_TILES / 2) * tileSize;
+      const cam = this.cameras.main;
+      cam.stopFollow();
+      cam.pan(czx, czy, 300, "Sine.easeInOut", true, (camera: any, progress: number) => {
+        if (progress === 1) cam.startFollow(this.player, true, 0.1, 0.1);
+      });
+      // apply biome environment tint
+      const zones = generateZones(Math.floor(this.mapWidthTiles / ZONE_TILES), Math.floor(this.mapHeightTiles / ZONE_TILES));
+      const meta = zones.find((q) => q.id === `${z.col},${z.row}`);
+      if (meta) this.applyBiome(meta.biome as BiomeId);
+    });
+    this.generateStructures();
+    this.spawnManager.start();
   }
 
   update() {
@@ -221,8 +280,9 @@ export class GameScene extends Phaser.Scene {
       body.setVelocity((vx / len) * speed, (vy / len) * speed);
     }
 
-    // Keep UI pinned
+    // Keep UI + minimap pinned
     if (this.ui) this.ui.setScrollFactor(0);
+    if (this.mini) this.mini.setScrollFactor(0);
 
     // Throttled position sync (multiplayer)
     const now = this.time.now;
@@ -231,110 +291,16 @@ export class GameScene extends Phaser.Scene {
       this.lastSent = now;
     }
 
-    // Battle when near and Enter pressed
+    // Update zone tracking for spawns/minimap
+    this.spawnManager?.updatePlayerPos(this.player.x, this.player.y);
+
+    // Battle when near and Enter pressed (compat)
     if (this.enterKey && Phaser.Input.Keyboard.JustDown(this.enterKey)) {
-      const nearest = this.getNearestSpawn(48);
-      if (nearest) this.startBattle(nearest);
+      const nearest = this.getNearestActive(64);
+      if (nearest) this.startBattleFromKey(nearest.key);
     }
   }
 
-  // ---- Spawn system ----
-  private scheduleNextSpawn() {
-    const delay = Phaser.Math.Between(3000, 8000); // 3–8s (faster for testing)
-    this.spawnTimer?.remove(false);
-    this.spawnTimer = this.time.addEvent({ delay, callback: () => this.spawnRandomPokemon(), loop: false });
-  }
-
-  private async spawnRandomPokemon() {
-    try {
-      const pos = this.pickRandomGrassTile();
-      if (!pos) { this.scheduleNextSpawn(); return; }
-
-      const pokeId = Phaser.Math.Between(1, 898);
-      const res = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokeId}`);
-      const data = await res.json();
-      const spriteUrl = data?.sprites?.front_default || data?.sprites?.other?.["official-artwork"]?.front_default;
-      if (!spriteUrl) { this.scheduleNextSpawn(); return; }
-
-      const key = `pkmn-${pokeId}-${Date.now()}`;
-      
-      // Store pokemon data without creating a sprite on the map
-      const rec: SpawnRecord = { 
-        key, 
-        name: data.name, 
-        pokeId, 
-        data, 
-        sprite: null as any, // No sprite needed
-        position: pos,
-        spriteUrl
-      };
-      this.spawns.set(key, rec);
-      this.statusOnce(`A wild ${capitalize(data.name)} appeared nearby!`, 600);
-      
-      // Notify React component if callback provided
-      if (this.configData.onPokemonSpotted) {
-        this.configData.onPokemonSpotted({
-          name: data.name,
-          spriteUrl,
-          pokeId
-        });
-      }
-    } catch (e) {
-      // ignore transient errors
-    } finally {
-      this.scheduleNextSpawn();
-    }
-  }
-
-  private pickRandomGrassTile() {
-    const { mapWidth, mapHeight, tileSize } = this.configData;
-    for (let attempts = 0; attempts < 40; attempts++) {
-      const tx = Phaser.Math.Between(1, mapWidth - 2);
-      const ty = Phaser.Math.Between(1, mapHeight - 2);
-      const t = this.groundLayer.getTileAt(tx, ty);
-      if (t && t.index === 0) {
-        const px = tx * tileSize + tileSize / 2;
-        const py = ty * tileSize + tileSize / 2;
-        // avoid spawning too close to player (reduced distance for easier spotting)
-        if (Phaser.Math.Distance.Between(px, py, this.player.x, this.player.y) > tileSize * 1.5) {
-          return { x: px, y: py };
-        }
-      }
-    }
-    return null;
-  }
-
-  private getNearestSpawn(radius: number): SpawnRecord | null {
-    let nearest: SpawnRecord | null = null;
-    let best = Number.POSITIVE_INFINITY;
-    this.spawns.forEach((rec) => {
-      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, rec.position.x, rec.position.y);
-      if (d < radius && d < best) { best = d; nearest = rec; }
-    });
-    return nearest;
-  }
-
-  private startBattle(rec: SpawnRecord) {
-    if (!this.configData.playerPokemon) {
-      this.statusOnce('You need a Pokémon to battle!', 800);
-      return;
-    }
-    
-    // Clear from sidebar and map
-    this.spawns.delete(rec.key);
-    if (this.configData.onPokemonCleared) this.configData.onPokemonCleared();
-    
-    // Transition to BattleScene
-    this.scene.start('BattleScene', {
-      wildPokemon: {
-        name: rec.name,
-        pokeId: rec.pokeId,
-        data: rec.data,
-        spriteUrl: rec.spriteUrl
-      },
-      playerPokemon: this.configData.playerPokemon
-    });
-  }
 
   // ---- UI helpers ----
   private createSidebarUI() {
@@ -434,5 +400,204 @@ export class GameScene extends Phaser.Scene {
     const s = this.add.sprite(x, y, "player").setTint(0x118ab2);
     s.setDepth(5);
     this.others.set(id, s);
+  }
+
+  // ---- Minimap ----
+  private createMiniMap() {
+    // Place top-left inside gameplay area (away from right sidebar)
+    const baseX = 12;
+    const baseY = 12;
+    this.mini = this.add.container(baseX, baseY).setDepth(1000);
+    this.mini.setScrollFactor(0);
+
+    const bg = this.add.rectangle(0, 0, this.miniW, this.miniH, 0x111111, 0.6).setOrigin(0);
+    this.miniGfx = this.add.graphics();
+    this.miniMarkers = this.add.container(0, 0);
+    this.miniBuildings = this.add.container(0, 0);
+    this.miniHighlight = this.add.graphics();
+
+    // no grid lines to keep zones invisible
+    const cols = Math.max(1, Math.floor(this.mapWidthTiles / ZONE_TILES));
+    const rows = Math.max(1, Math.floor(this.mapHeightTiles / ZONE_TILES));
+    this.miniGfx.clear();
+    this.miniGfx.lineStyle(1, 0x333333, 0.8);
+    this.miniGfx.strokeRect(0, 0, this.miniW, this.miniH);
+
+    // clickable zone
+    const hit = this.add.zone(0, 0, this.miniW, this.miniH).setOrigin(0).setInteractive({ useHandCursor: true });
+    hit.on('pointerdown', (_pointer: any, localX: number, localY: number) => {
+      const zc = Math.floor(localX / (this.miniW / cols));
+      const zr = Math.floor(localY / (this.miniH / rows));
+      const cx = (zc * ZONE_TILES + ZONE_TILES / 2) * this.tileSizePx;
+      const cy = (zr * ZONE_TILES + ZONE_TILES / 2) * this.tileSizePx;
+      const cam = this.cameras.main;
+      cam.stopFollow();
+      cam.pan(cx, cy, 300, 'Sine.easeInOut', true, (camera: any, progress: number) => {
+        if (progress === 1) cam.startFollow(this.player, true, 0.1, 0.1);
+      });
+    });
+
+    this.mini.add([bg, this.miniGfx, this.miniHighlight, this.miniBuildings, this.miniMarkers, hit]);
+    this.highlightMiniZone();
+  }
+
+  private highlightMiniZone() {
+    if (!this.miniHighlight) return;
+    const grid = this.spawnManager?.getZoneGrid();
+    const cols = grid?.cols ?? Math.max(1, Math.floor(this.mapWidthTiles / ZONE_TILES));
+    const rows = grid?.rows ?? Math.max(1, Math.floor(this.mapHeightTiles / ZONE_TILES));
+    const cur = this.spawnManager?.getCurrentZone();
+    if (!cur) return;
+    const cw = this.miniW / cols;
+    const ch = this.miniH / rows;
+    this.miniHighlight.clear();
+    this.miniHighlight.lineStyle(2, 0xffff66, 1);
+    this.miniHighlight.strokeRect(cur.col * cw, cur.row * ch, cw, ch);
+  }
+
+  private worldToMini(x: number, y: number) {
+    const sx = this.miniW / (this.mapWidthTiles * this.tileSizePx);
+    const sy = this.miniH / (this.mapHeightTiles * this.tileSizePx);
+    return { x: x * sx, y: y * sy };
+  }
+
+  private addMiniMarker(key: string, wx: number, wy: number) {
+    if (!this.miniMarkers) return;
+    const pt = this.worldToMini(wx, wy);
+    const dot = this.add.rectangle(pt.x, pt.y, 4, 4, 0xffffff, 1).setOrigin(0.5);
+    (dot as any).name = key;
+    this.miniMarkers.add(dot);
+  }
+
+  private removeMiniMarker(key: string) {
+    if (!this.miniMarkers) return;
+    const list = (this.miniMarkers as any).list as Phaser.GameObjects.GameObject[];
+    const found = list.find((ch: any) => ch.name === key);
+    if (found) found.destroy();
+  }
+
+  private getNearestActive(radius: number): any | null {
+    if (!this.spawnManager) return null;
+    let best: any = null;
+    let bestD = Number.POSITIVE_INFINITY;
+    this.spawnManager.getActiveSpawns().forEach((rec: any) => {
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, rec.position.x, rec.position.y);
+      if (d < radius && d < bestD) { bestD = d; best = rec; }
+    });
+    return best;
+  }
+
+  private async startBattleFromKey(key: string) {
+    if (!this.spawnManager) return;
+    const rec = this.spawnManager.getActiveSpawns().find(r => r.key === key);
+    if (!rec) return;
+    if (!this.configData.playerPokemon) {
+      this.statusOnce('You need a Pokémon to battle!', 800);
+      return;
+    }
+    try {
+      const pokeRes = await fetch(`https://pokeapi.co/api/v2/pokemon/${rec.pokeId}`);
+      const pokeData = await pokeRes.json();
+      this.spawnManager.despawn(key);
+      this.scene.start('BattleScene', {
+        wildPokemon: {
+          name: rec.name,
+          pokeId: rec.pokeId,
+          data: pokeData,
+          spriteUrl: rec.spriteUrl,
+        },
+        playerPokemon: this.configData.playerPokemon,
+      });
+    } catch {}
+  }
+
+  // ---- Structures ----
+  private generateStructures() {
+    const cols = Math.max(1, Math.floor(this.mapWidthTiles / ZONE_TILES));
+    const rows = Math.max(1, Math.floor(this.mapHeightTiles / ZONE_TILES));
+    const zones = generateZones(cols, rows);
+    const choose = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
+    const byBiome: Record<string, StructureType[]> = {
+      city: ["lab", "house"],
+      mountain: ["temple", "house"],
+      forest: ["house", "tower"],
+      desert: ["temple"],
+      lake: ["tower"],
+      grassland: ["house"],
+      cave: ["tower"],
+      snowfield: ["house", "temple"],
+    } as any;
+
+    this.structures = [];
+    zones.forEach((z) => {
+      if (Math.random() > 0.12) return; // ~12% of zones have a building
+      const types = byBiome[z.biome] || ["house"];
+      const type = choose(types);
+      const startX = z.col * ZONE_TILES * this.tileSizePx;
+      const startY = z.row * ZONE_TILES * this.tileSizePx;
+      const x = startX + 16 + Math.random() * (ZONE_TILES * this.tileSizePx - 32);
+      const y = startY + 16 + Math.random() * (ZONE_TILES * this.tileSizePx - 32);
+      const id = `b-${z.id}-${type}-${Math.floor(x)}-${Math.floor(y)}`;
+      this.structures.push({ id, type, col: z.col, row: z.row, x, y });
+    });
+
+    // render
+    this.structures.forEach((s) => {
+      const color = s.type === "lab" ? 0xcfe3ff : s.type === "tower" ? 0x6b4e9b : s.type === "temple" ? 0xc2b280 : 0xd3d3d3;
+      const building = this.add.rectangle(s.x, s.y, 32, 24, color, 1).setOrigin(0.5).setDepth(15);
+      this.physics.add.existing(building, true);
+      const door = this.add.rectangle(s.x, s.y + 12, 10, 6, 0x000000, 0.8).setDepth(16);
+      this.physics.add.existing(door, true);
+      this.physics.add.overlap(this.player, door, () => this.enterStructure(s));
+      // minimap marker
+      if (this.miniBuildings) {
+        const pt = this.worldToMini(s.x, s.y);
+        const sq = this.add.rectangle(pt.x, pt.y, 5, 5, 0xffe066, 1).setOrigin(0.5);
+        this.miniBuildings.add(sq);
+      }
+    });
+  }
+
+  private enterStructure(s: StructureDef) {
+    if (this.insideStructure.active) return;
+    this.insideStructure = { active: true, type: s.type } as any;
+    // override spawn pool based on structure -> use BIOMES mapping
+    const b = s.type === "tower" ? BIOMES.tower : s.type === "lab" ? BIOMES.lab : BIOMES.temple;
+    this.applyBiome(b.id);
+    this.spawnManager?.setOverrideTypes(b.pokemonPool);
+  }
+
+  private exitStructure() {
+    if (!this.insideStructure.active) return;
+    this.insideStructure = { active: false, type: null } as any;
+    // clear override and re-apply zone biome color
+    this.spawnManager?.setOverrideTypes(null);
+    const cur = this.spawnManager?.getCurrentZone();
+    if (cur) {
+      const zones = generateZones(Math.floor(this.mapWidthTiles / ZONE_TILES), Math.floor(this.mapHeightTiles / ZONE_TILES));
+      const meta = zones.find((q) => q.id === `${cur.col},${cur.row}`);
+      if (meta) this.applyBiome(meta.biome as BiomeId);
+    }
+  }
+
+  private applyBiome(id: BiomeId) {
+    const def = BIOMES[id];
+    if (!def) return;
+    // color tween only (particles disabled for compatibility)
+    if (this.envOverlay) {
+      const target = def.environmentColor;
+      const from = (this.envOverlay.fillColor ?? 0xffffff) as number;
+      const o = { t: 0 } as any;
+      this.tweens.add({ targets: o, t: 1, duration: 400, onUpdate: () => {
+        const c = Phaser.Display.Color.Interpolate.ColorWithColor(
+          Phaser.Display.Color.IntegerToColor(from),
+          Phaser.Display.Color.IntegerToColor(target),
+          100,
+          Math.floor(o.t * 100)
+        );
+        const hex = Phaser.Display.Color.GetColor(c.r, c.g, c.b);
+        this.envOverlay!.setFillStyle(hex, 0.08);
+      }});
+    }
   }
 }
