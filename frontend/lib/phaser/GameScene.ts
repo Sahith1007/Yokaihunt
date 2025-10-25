@@ -95,6 +95,12 @@ export class GameScene extends Phaser.Scene {
     const { tileSize } = this.configData;
     const width = tileSize * 2;
     const height = tileSize;
+    
+    // Check if texture already exists, destroy it first
+    if (this.textures.exists("tilesheet")) {
+      this.textures.remove("tilesheet");
+    }
+    
     const sheet = this.textures.createCanvas("tilesheet", width, height);
     if (!sheet) {
       throw new Error("Failed to create canvas texture 'tilesheet'");
@@ -129,6 +135,9 @@ export class GameScene extends Phaser.Scene {
     sheet.refresh();
 
     // Generate a player texture (circle)
+    if (this.textures.exists("player")) {
+      this.textures.remove("player");
+    }
     const g = this.make.graphics({ x: 0, y: 0 });
     g.fillStyle(0xffd166, 1);
     g.fillCircle(tileSize / 2, tileSize / 2, tileSize * 0.4);

@@ -7,6 +7,7 @@ export interface StarterPokemon {
   type: PokemonType;
   sprite: string;
   level: number;
+  data?: any; // Full PokeAPI data including moves
 }
 
 /**
@@ -42,6 +43,7 @@ export async function getStarterPokemon(): Promise<StarterPokemon[]> {
       type: starter.type,
       sprite: data?.sprites?.front_default || "",
       level: 1,
+      data: data, // Include full PokeAPI data for battle moves
     };
   });
 
