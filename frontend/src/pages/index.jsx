@@ -58,7 +58,15 @@ export default function Home() {
       } catch {}
       try {
         const bag = await mod.getPlayerInventory();
-        setBalls(bag || { pokeball: 0, greatball: 0, ultraball: 0, masterball: 0 });
+        // Merge backend data with initial values (keep higher values)
+        if (bag) {
+          setBalls(prev => ({
+            pokeball: Math.max(prev.pokeball, bag.pokeball || 0),
+            greatball: Math.max(prev.greatball, bag.greatball || 0),
+            ultraball: Math.max(prev.ultraball, bag.ultraball || 0),
+            masterball: Math.max(prev.masterball, bag.masterball || 0),
+          }));
+        }
       } catch {}
     });
   }, [isInitialized]);
