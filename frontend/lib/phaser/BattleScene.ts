@@ -135,7 +135,7 @@ export class BattleScene extends Phaser.Scene {
     this.actionButtons = this.add.container(0, 0);
     
     const buttonData = [
-      { text: 'ATTACK', x: width - 200, y: height - 40, action: () => this.playerAttack() },
+      { text: 'FIGHT', x: width - 200, y: height - 40, action: () => this.showMoveSelection() },
       { text: 'BAG', x: width - 150, y: height - 40, action: () => this.openBag() },
       { text: 'CATCH', x: width - 100, y: height - 40, action: () => this.attemptCatch() },
       { text: 'RUN', x: width - 50, y: height - 40, action: () => this.runAway() }
@@ -154,6 +154,113 @@ export class BattleScene extends Phaser.Scene {
     });
 
     if (this.actionButtons) this.battleUI?.add(this.actionButtons);
+  }
+
+  private showMoveSelection() {
+    // Hide main action buttons
+    if (this.actionButtons) this.actionButtons.setVisible(false);
+
+    const { width, height } = this.scale;
+    const moves = this.getPlayerMoves();
+
+    // Create move selection container
+    const moveContainer = this.add.container(0, 0);
+
+    // Background for move selection
+    const moveBg = this.add.rectangle(width - 320, height - 120, 300, 100, 0x222222, 0.95).setOrigin(0);
+    moveContainer.add(moveBg);
+
+    // Display up to 4 moves in a 2x2 grid
+    moves.slice(0, 4).forEach((move, index) => {
+      const col = index % 2;
+      const row = Math.floor(index / 2);
+      const x = width - 310 + col * 150;
+      const y = height - 110 + row * 45;
+
+      const moveButton = this.add.text(x, y, move.name.toUpperCase(), {
+        fontSize: '13px',
+        color: '#fff',
+        backgroundColor: this.getMoveTypeColor(move.type),
+        padding: { x: 10, y: 6 }
+      }).setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => {
+          moveContainer.destroy();
+          if (this.actionButtons) this.actionButtons.setVisible(true);
+          this.useMove(move);
+        });
+
+      moveContainer.add(moveButton);
+    });
+
+    // Back button
+    const backButton = this.add.text(width - 250, height - 20, 'BACK', {
+      fontSize: '12px',
+      color: '#fff',
+      backgroundColor: '#666',
+      padding: { x: 8, y: 4 }
+    }).setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => {
+        moveContainer.destroy();
+        if (this.actionButtons) this.actionButtons.setVisible(true);
+      });
+
+    moveContainer.add(backButton);
+    this.battleUI?.add(moveContainer);
+  }
+
+  private getPlayerMoves() {
+    // Get moves from Pokemon data
+    const moves = this.playerPokemon.data?.moves || [];
+    
+    // Filter to get learned moves (simplified - just take first 4)
+    return moves.slice(0, 4).map((m: any) => ({
+      name: m.move.name.replace(/-/g, ' '),
+      url: m.move.url,
+      type: 'normal' // Default type, would need to fetch move details for actual type
+    }));
+  }
+
+  private getMoveTypeColor(type: string): string {
+    const colors: Record<string, string> = {
+      normal: '#A8A878',
+      fire: '#F08030',
+      water: '#6890F0',
+      grass: '#78C850',
+      electric: '#F8D030',
+      ice: '#98D8D8',
+      fighting: '#C03028',
+      poison: '#A040A0',
+      ground: '#E0C068',
+      flying: '#A890F0',
+      psychic: '#F85888',
+      bug: '#A8B820',
+      rock: '#B8A038',
+      ghost: '#705898',
+      dragon: '#7038F8',
+      dark: '#705848',
+      steel: '#B8B8D0',
+      fairy: '#EE99AC'
+    };
+    return colors[type] || colors.normal;
+  }
+
+  private useMove(move: any) {
+    const playerAttack = this.getStatValue(this.playerPokemon.data, 'attack');
+    const wildDefense = this.getStatValue(this.wildPokemon.data, 'defense');
+    
+    const baseDamage = Math.max(1, playerAttack - wildDefense);
+    const damage = Math.floor(baseDamage * (0.8 + Math.random() * 0.4)); // 0.8-1.2 multiplier
+    
+    this.wildHp = Math.max(0, this.wildHp - damage);
+    this.updateBattleText(`${this.capitalize(this.playerPokemon.name)} used ${move.name}! Dealt ${damage} damage!`);
+    
+    this.updateHpBars();
+    
+    if (this.wildHp <= 0) {
+      this.wildDefeated();
+    } else {
+      this.time.delayedCall(1500, () => this.wildAttack());
+    }
   }
 
   private playerAttack() {
