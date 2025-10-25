@@ -12,7 +12,8 @@ const Game = dynamic(() => import("../../components/Game"), { ssr: false });
 
 export default function Home() {
   const [player, setPlayer] = useState(null);
-  const [balls, setBalls] = useState({ pokeball: 0, greatball: 0, ultraball: 0, masterball: 0 });
+  // Give starter players some Pokeballs to begin with
+  const [balls, setBalls] = useState({ pokeball: 10, greatball: 5, ultraball: 2, masterball: 0 });
   const [spottedPokemon, setSpottedPokemon] = useState(null);
   const [nearby, setNearby] = useState([]);
   const [playerPokemon, setPlayerPokemon] = useState([]);
@@ -117,15 +118,19 @@ export default function Home() {
             spotted={spottedPokemon}
             nearby={nearby}
             balls={balls}
-            playerPokemon={playerPokemon}
-            selectedPokemon={selectedPokemon}
+            playerPokemon={starterPokemon ? [starterPokemon, ...playerPokemon] : playerPokemon}
+            selectedPokemon={starterPokemon || selectedPokemon}
             onSelectPokemon={setSelectedPokemon}
           />
         </aside>
       </div>
 
       <InventoryModal open={showInventory} onClose={() => setShowInventory(false)} />
-      <TeamModal open={showTeam} team={playerPokemon.slice(0, 6)} onClose={() => setShowTeam(false)} />
+      <TeamModal 
+        open={showTeam} 
+        team={starterPokemon ? [starterPokemon, ...playerPokemon].slice(0, 6) : playerPokemon.slice(0, 6)} 
+        onClose={() => setShowTeam(false)} 
+      />
       <WalletButton />
     </div>
   );
