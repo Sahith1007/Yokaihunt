@@ -12,8 +12,7 @@ const Game = dynamic(() => import("../../components/Game"), { ssr: false });
 
 export default function Home() {
   const [player, setPlayer] = useState(null);
-  // Give starter players some Pokeballs to begin with
-  const [balls, setBalls] = useState({ pokeball: 10, greatball: 5, ultraball: 2, masterball: 0 });
+  const [balls, setBalls] = useState({ pokeball: 0, greatball: 0, ultraball: 0, masterball: 0 });
   const [spottedPokemon, setSpottedPokemon] = useState(null);
   const [nearby, setNearby] = useState([]);
   const [playerPokemon, setPlayerPokemon] = useState([]);
@@ -58,15 +57,7 @@ export default function Home() {
       } catch {}
       try {
         const bag = await mod.getPlayerInventory();
-        // Merge backend data with initial values (keep higher values)
-        if (bag) {
-          setBalls(prev => ({
-            pokeball: Math.max(prev.pokeball, bag.pokeball || 0),
-            greatball: Math.max(prev.greatball, bag.greatball || 0),
-            ultraball: Math.max(prev.ultraball, bag.ultraball || 0),
-            masterball: Math.max(prev.masterball, bag.masterball || 0),
-          }));
-        }
+        setBalls(bag || { pokeball: 0, greatball: 0, ultraball: 0, masterball: 0 });
       } catch {}
     });
   }, [isInitialized]);
