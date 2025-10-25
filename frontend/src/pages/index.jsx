@@ -1,5 +1,5 @@
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Taskbar from "../../components/HUD/Taskbar";
 import Sidebar from "../../components/HUD/Sidebar";
 import InventoryModal from "../../components/Modals/InventoryModal";
@@ -62,10 +62,23 @@ export default function Home() {
     });
   }, [isInitialized]);
 
-  const handleStarterSelected = (pokemon) => {
+  const handleStarterSelected = useCallback((pokemon) => {
     setStarterPokemon(pokemon);
     setShowStarterSelection(false);
-  };
+  }, []);
+
+  // Memoize Phaser callbacks to prevent Game re-initialization
+  const handlePokemonSpotted = useCallback((pokemon) => {
+    setSpottedPokemon(pokemon);
+  }, []);
+
+  const handlePokemonCleared = useCallback(() => {
+    setSpottedPokemon(null);
+  }, []);
+
+  const handleSpawnsUpdate = useCallback((spawns) => {
+    setNearby(spawns);
+  }, []);
 
   // Show starter selection if player hasn't chosen one
   if (showStarterSelection) {
@@ -84,9 +97,9 @@ export default function Home() {
               playerSpeed={220}
               initialX={player?.posX}
               initialY={player?.posY}
-              onPokemonSpotted={setSpottedPokemon}
-              onPokemonCleared={() => setSpottedPokemon(null)}
-              onSpawnsUpdate={setNearby}
+              onPokemonSpotted={handlePokemonSpotted}
+              onPokemonCleared={handlePokemonCleared}
+              onSpawnsUpdate={handleSpawnsUpdate}
               playerPokemon={selectedPokemon}
             />
           </div>
