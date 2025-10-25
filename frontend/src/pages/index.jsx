@@ -100,7 +100,7 @@ export default function Home() {
               onPokemonSpotted={handlePokemonSpotted}
               onPokemonCleared={handlePokemonCleared}
               onSpawnsUpdate={handleSpawnsUpdate}
-              playerPokemon={selectedPokemon}
+              playerPokemon={starterPokemon || selectedPokemon}
             />
           </div>
           <Taskbar
