@@ -486,6 +486,12 @@ export class GameScene extends Phaser.Scene {
       const pokeRes = await fetch(`https://pokeapi.co/api/v2/pokemon/${rec.pokeId}`);
       const pokeData = await pokeRes.json();
       this.spawnManager.despawn(key);
+      
+      // Transform player Pokemon to match BattleScene expected format
+      const playerPoke = this.configData.playerPokemon;
+      const hpStat = playerPoke.data?.stats?.find((s: any) => s.stat.name === 'hp')?.base_stat || 50;
+      const maxHp = Math.floor(hpStat * 1.5 * (playerPoke.level || 1));
+      
       this.scene.start('BattleScene', {
         wildPokemon: {
           name: rec.name,
@@ -493,7 +499,15 @@ export class GameScene extends Phaser.Scene {
           data: pokeData,
           spriteUrl: rec.spriteUrl,
         },
-        playerPokemon: this.configData.playerPokemon,
+        playerPokemon: {
+          name: playerPoke.name || playerPoke.displayName,
+          pokeId: playerPoke.id,
+          data: playerPoke.data,
+          spriteUrl: playerPoke.sprite,
+          level: playerPoke.level || 1,
+          maxHp: maxHp,
+          currentHp: maxHp,
+        },
       });
     } catch {}
   }
