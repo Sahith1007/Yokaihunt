@@ -21,18 +21,24 @@ export default function Home() {
   const [showTeam, setShowTeam] = useState(false);
   const [showStarterSelection, setShowStarterSelection] = useState(false);
   const [starterPokemon, setStarterPokemon] = useState(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
+  // Check for starter on mount (only once)
   useEffect(() => {
-    // Check if player has selected a starter
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && !isInitialized) {
       if (!hasStarterPokemon()) {
         setShowStarterSelection(true);
-        return;
       } else {
         const starter = loadStarterPokemon();
         setStarterPokemon(starter);
       }
+      setIsInitialized(true);
     }
+  }, [isInitialized]);
+
+  // Load player data (only once)
+  useEffect(() => {
+    if (!isInitialized) return;
 
     // player position
     fetch("http://localhost:4000/api/player")
@@ -54,7 +60,7 @@ export default function Home() {
         setBalls(bag || { pokeball: 0, greatball: 0, ultraball: 0, masterball: 0 });
       } catch {}
     });
-  }, []);
+  }, [isInitialized]);
 
   const handleStarterSelected = (pokemon) => {
     setStarterPokemon(pokemon);
