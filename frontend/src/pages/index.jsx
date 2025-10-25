@@ -5,6 +5,8 @@ import Sidebar from "../../components/HUD/Sidebar";
 import InventoryModal from "../../components/Modals/InventoryModal";
 import TeamModal from "../../components/Modals/TeamModal";
 import WalletButton from "../../components/WalletButton";
+import StarterSelection from "../../components/StarterSelection";
+import { hasStarterPokemon, loadStarterPokemon } from "../../lib/pokeapi";
 
 const Game = dynamic(() => import("../../components/Game"), { ssr: false });
 
@@ -17,8 +19,21 @@ export default function Home() {
   const [selectedPokemon, setSelectedPokemon] = useState(null);
   const [showInventory, setShowInventory] = useState(false);
   const [showTeam, setShowTeam] = useState(false);
+  const [showStarterSelection, setShowStarterSelection] = useState(false);
+  const [starterPokemon, setStarterPokemon] = useState(null);
 
   useEffect(() => {
+    // Check if player has selected a starter
+    if (typeof window !== "undefined") {
+      if (!hasStarterPokemon()) {
+        setShowStarterSelection(true);
+        return;
+      } else {
+        const starter = loadStarterPokemon();
+        setStarterPokemon(starter);
+      }
+    }
+
     // player position
     fetch("http://localhost:4000/api/player")
       .then(async (r) => {
@@ -40,6 +55,16 @@ export default function Home() {
       } catch {}
     });
   }, []);
+
+  const handleStarterSelected = (pokemon) => {
+    setStarterPokemon(pokemon);
+    setShowStarterSelection(false);
+  };
+
+  // Show starter selection if player hasn't chosen one
+  if (showStarterSelection) {
+    return <StarterSelection onSelectStarter={handleStarterSelected} />;
+  }
 
   return (
     <div className="w-screen h-screen overflow-hidden bg-[#0f1116] text-white">
@@ -64,6 +89,7 @@ export default function Home() {
             onTeam={() => setShowTeam(true)}
             onMarket={() => {}}
             onWallet={() => {}}
+            starterPokemon={starterPokemon}
           />
         </section>
 

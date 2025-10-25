@@ -12,6 +12,7 @@
     "@perawallet/connect": "^1.4.2",
     "@prisma/client": "^6.17.1",
     "@randlabs/myalgo-connect": "^1.4.2",
+    "@txnlab/use-wallet": "^4.3.1",
     "axios": "^1.12.2",
     "bcryptjs": "^2.4.3",
     "colyseus": "^0.14.17",
