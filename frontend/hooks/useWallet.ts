@@ -18,6 +18,8 @@ export function useWallet() {
 
   // Initialize wallet manager on mount
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    
     walletManager.initialize();
     
     // Auto-restore session if previously connected

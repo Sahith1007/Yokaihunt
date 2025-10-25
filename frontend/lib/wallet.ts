@@ -12,6 +12,11 @@ let walletManagerInstance: WalletManager | null = null;
 
 export const walletManager = {
   initialize(): WalletManager {
+    if (typeof window === "undefined") {
+      // Return a dummy manager on server side
+      return null as any;
+    }
+    
     if (walletManagerInstance) return walletManagerInstance;
 
     // Initialize wallet providers
@@ -39,6 +44,7 @@ export const walletManager = {
   },
 
   async connect(providerId: string): Promise<string | null> {
+    if (typeof window === "undefined") return null;
     const manager = this.getInstance();
     if (!manager) return null;
 
@@ -62,6 +68,7 @@ export const walletManager = {
   },
 
   async disconnect(): Promise<void> {
+    if (typeof window === "undefined") return;
     const manager = this.getInstance();
     if (!manager) return;
 
@@ -72,17 +79,20 @@ export const walletManager = {
   },
 
   isConnected(): boolean {
+    if (typeof window === "undefined") return false;
     const manager = this.getInstance();
     return manager?.activeWallet?.isConnected || false;
   },
 
   getAddress(): string | null {
+    if (typeof window === "undefined") return null;
     const manager = this.getInstance();
     const accounts = manager?.activeWallet?.accounts || [];
     return accounts[0]?.address || null;
   },
 
   getActiveProvider(): string | null {
+    if (typeof window === "undefined") return null;
     const manager = this.getInstance();
     return manager?.activeWallet?.id || null;
   },
