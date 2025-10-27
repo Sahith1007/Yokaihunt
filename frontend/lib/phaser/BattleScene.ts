@@ -192,16 +192,187 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private attemptCatch() {
+  private async attemptCatch() {
     const catchRate = this.wildHp < (this.wildMaxHp * 0.2) ? 0.8 : 0.3; // Higher rate if HP < 20%
     
     if (Math.random() < catchRate) {
       this.updateBattleText(`Gotcha! ${this.capitalize(this.wildPokemon.name)} was caught!`);
+      
+      // Mint NFT on blockchain
+      await this.mintCaughtPokemonNFT();
+      
       this.time.delayedCall(2000, () => this.endBattle(true));
     } else {
       this.updateBattleText(`${this.capitalize(this.wildPokemon.name)} broke free!`);
       this.time.delayedCall(1500, () => this.wildAttack());
     }
+  }
+
+  private async mintCaughtPokemonNFT() {
+    try {
+      // Get wallet address from localStorage or wallet manager
+      const walletAddress = this.getWalletAddress();
+      
+      if (!walletAddress) {
+        console.warn('No wallet connected. Pokemon caught but not minted as NFT.');
+        return;
+      }
+
+      this.updateBattleText('Minting your NFT on blockchain...');
+
+      // Determine rarity based on stats
+      const rarity = this.determineRarity(this.wildPokemon.data);
+      const isLegendary = this.checkIfLegendary(this.wildPokemon.pokeId);
+
+      const pokemonData = {
+        name: this.wildPokemon.name,
+        pokeId: this.wildPokemon.pokeId,
+        rarity,
+        level: 1,
+        isLegendary,
+        stats: this.wildPokemon.data.stats,
+        types: this.wildPokemon.data.types,
+        imageUrl: this.wildPokemon.spriteUrl,
+        ...this.wildPokemon.data
+      };
+
+      const response = await fetch('/api/nft/mint-catch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pokemonData,
+          playerAddress: walletAddress,
+          userId: this.getUserId() // Get from session/auth
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        this.updateBattleText(
+          `✅ ${this.capitalize(this.wildPokemon.name)} minted as NFT #${result.nft.assetId}!\nTx: ${result.nft.txId.substring(0, 10)}...`
+        );
+        
+        // Show popup with transaction details
+        this.showNFTMintedPopup(result.nft);
+      } else {
+        console.error('Failed to mint NFT:', result.error);
+        this.updateBattleText(`Caught ${this.capitalize(this.wildPokemon.name)}! (NFT minting failed)`);
+      }
+
+    } catch (error) {
+      console.error('Error minting NFT:', error);
+      this.updateBattleText(`Caught ${this.capitalize(this.wildPokemon.name)}!`);
+    }
+  }
+
+  private showNFTMintedPopup(nft: any) {
+    const { width, height } = this.scale;
+    
+    // Create popup container
+    const popup = this.add.container(width / 2, height / 2);
+    
+    // Background
+    const bg = this.add.rectangle(0, 0, 400, 250, 0x000000, 0.9);
+    const border = this.add.rectangle(0, 0, 400, 250, 0xffd700).setStrokeStyle(4, 0xffd700);
+    
+    // Title
+    const title = this.add.text(0, -90, '🎉 NFT Minted!', {
+      fontSize: '24px',
+      color: '#ffd700',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    
+    // Pokemon name
+    const pokemonName = this.add.text(0, -50, `${this.capitalize(nft.name)}`, {
+      fontSize: '20px',
+      color: '#fff'
+    }).setOrigin(0.5);
+    
+    // Asset ID
+    const assetIdText = this.add.text(0, -20, `Asset ID: ${nft.assetId}`, {
+      fontSize: '14px',
+      color: '#aaa'
+    }).setOrigin(0.5);
+    
+    // Tx hash (shortened)
+    const txHashText = this.add.text(0, 5, `Tx: ${nft.txId.substring(0, 20)}...`, {
+      fontSize: '12px',
+      color: '#888'
+    }).setOrigin(0.5);
+    
+    // Explorer link hint
+    const explorerText = this.add.text(0, 30, 'View on AlgoExplorer (TestNet)', {
+      fontSize: '12px',
+      color: '#4da6ff',
+      fontStyle: 'italic'
+    }).setOrigin(0.5);
+    
+    // Rarity badge
+    const rarityBadge = this.add.text(0, 60, `⭐ ${nft.rarity || 'Common'}`, {
+      fontSize: '14px',
+      color: '#ffd700',
+      backgroundColor: '#333',
+      padding: { x: 10, y: 5 }
+    }).setOrigin(0.5);
+    
+    // OK button
+    const okButton = this.add.text(0, 100, 'OK', {
+      fontSize: '18px',
+      color: '#fff',
+      backgroundColor: '#4CAF50',
+      padding: { x: 30, y: 10 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => {
+        popup.destroy();
+      });
+    
+    popup.add([bg, border, title, pokemonName, assetIdText, txHashText, explorerText, rarityBadge, okButton]);
+    popup.setDepth(1000);
+    
+    // Auto-dismiss after 10 seconds
+    this.time.delayedCall(10000, () => {
+      if (popup.scene) popup.destroy();
+    });
+  }
+
+  private determineRarity(pokemonData: any): string {
+    const totalStats = pokemonData.stats?.reduce((sum: number, stat: any) => sum + stat.base_stat, 0) || 0;
+    
+    if (totalStats > 600) return 'Legendary';
+    if (totalStats > 500) return 'Rare';
+    if (totalStats > 400) return 'Uncommon';
+    return 'Common';
+  }
+
+  private checkIfLegendary(pokeId: number): boolean {
+    const legendaryIds = [
+      150, // Mewtwo
+      144, 145, 146, // Legendary Birds
+      243, 244, 245, // Legendary Beasts
+      249, 250, // Ho-Oh, Lugia
+      382, 383, 384, // Hoenn legends
+      480, 481, 482, // Lake Trio
+      483, 484, 487, // Dialga, Palkia, Giratina
+    ];
+    return legendaryIds.includes(pokeId);
+  }
+
+  private getWalletAddress(): string | null {
+    // Try to get from wallet manager
+    if (typeof window !== 'undefined') {
+      const storedAddress = localStorage.getItem('algorand_wallet_address');
+      return storedAddress;
+    }
+    return null;
+  }
+
+  private getUserId(): string | null {
+    // Get user ID from session/auth
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('user_id') || 'demo_user';
+    }
+    return null;
   }
 
   private openBag() {

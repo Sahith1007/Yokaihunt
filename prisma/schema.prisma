@@ -24,12 +24,32 @@ model User {
 }
 
 model PlayerProgress {
-  id          String   @id @default(cuid())
-  user        User     @relation(fields: [userId], references: [id])
-  userId      String   @unique
-  currentMap  String   @default("start")
-  posX        Int      @default(64)
-  posY        Int      @default(64)
-  ownedYokai  Json
-  updatedAt   DateTime @updatedAt
+  id             String   @id @default(cuid())
+  user           User     @relation(fields: [userId], references: [id])
+  userId         String   @unique
+  walletAddress  String?  @unique // Algorand wallet address
+  starterChosen  Boolean  @default(false)
+  starterPokemon String? // Charmander, Squirtle, or Bulbasaur
+  currentMap     String   @default("start")
+  posX           Int      @default(64)
+  posY           Int      @default(64)
+  ownedYokai     Json     // Legacy field
+  caughtNFTs     CaughtNFT[] // Track NFTs on blockchain
+  updatedAt      DateTime @updatedAt
+}
+
+model CaughtNFT {
+  id            String   @id @default(cuid())
+  progress      PlayerProgress @relation(fields: [progressId], references: [id])
+  progressId    String
+  assetId       BigInt   @unique // Algorand asset ID
+  pokemonName   String
+  pokeId        Int
+  rarity        String
+  level         Int      @default(1)
+  isLegendary   Boolean  @default(false)
+  txHash        String   // Transaction hash for proof
+  caughtAt      DateTime @default(now())
+  metadata      Json     // Store full Pokemon metadata
+}
 }
