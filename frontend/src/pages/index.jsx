@@ -4,7 +4,6 @@ import Taskbar from "../../components/HUD/Taskbar";
 import Sidebar from "../../components/HUD/Sidebar";
 import InventoryModal from "../../components/Modals/InventoryModal";
 import TeamModal from "../../components/Modals/TeamModal";
-import WalletButton from "../../components/WalletButton";
 import StarterSelection from "../../components/StarterSelection";
 import { hasStarterPokemon, loadStarterPokemon } from "../../lib/pokeapi";
 
@@ -107,7 +106,6 @@ export default function Home() {
             onInventory={() => setShowInventory(true)}
             onTeam={() => setShowTeam(true)}
             onMarket={() => {}}
-            onWallet={() => {}}
             starterPokemon={starterPokemon}
           />
         </section>
@@ -130,7 +128,6 @@ export default function Home() {
         team={starterPokemon ? [starterPokemon, ...playerPokemon].slice(0, 6) : playerPokemon.slice(0, 6)} 
         onClose={() => setShowTeam(false)} 
       />
-      <WalletButton />
     </div>
   );
 }

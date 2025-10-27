@@ -91,6 +91,11 @@ export class BattleScene extends Phaser.Scene {
 
     this.createUI();
     this.updateBattleText(`A wild ${this.capitalize(this.wildPokemon.name)} appeared!`);
+    
+    // Auto-hide the appearance message after 3 seconds
+    this.time.delayedCall(3000, () => {
+      this.updateBattleText('What will you do?');
+    });
   }
 
   private createUI() {
@@ -212,12 +217,50 @@ export class BattleScene extends Phaser.Scene {
     // Get moves from Pokemon data
     const moves = this.playerPokemon.data?.moves || [];
     
+    // If Pokemon has no moves, provide default moves based on type or generic attacks
+    if (moves.length === 0) {
+      // Fallback moves if Pokemon has no move data
+      const types = this.playerPokemon.data?.types || [];
+      const primaryType = types[0]?.type?.name || 'normal';
+      
+      return [
+        { name: 'Tackle', type: 'normal' },
+        { name: 'Scratch', type: 'normal' },
+        { name: this.getTypedMove(primaryType), type: primaryType },
+        { name: 'Quick Attack', type: 'normal' }
+      ];
+    }
+    
     // Filter to get learned moves (simplified - just take first 4)
     return moves.slice(0, 4).map((m: any) => ({
       name: m.move.name.replace(/-/g, ' '),
       url: m.move.url,
       type: 'normal' // Default type, would need to fetch move details for actual type
     }));
+  }
+  
+  private getTypedMove(type: string): string {
+    const typeMoves: Record<string, string> = {
+      fire: 'Ember',
+      water: 'Water Gun',
+      grass: 'Vine Whip',
+      electric: 'Thunder Shock',
+      ice: 'Powder Snow',
+      fighting: 'Karate Chop',
+      poison: 'Poison Sting',
+      ground: 'Mud Slap',
+      flying: 'Gust',
+      psychic: 'Confusion',
+      bug: 'Bug Bite',
+      rock: 'Rock Throw',
+      ghost: 'Lick',
+      dragon: 'Dragon Breath',
+      dark: 'Bite',
+      steel: 'Metal Claw',
+      fairy: 'Fairy Wind',
+      normal: 'Tackle'
+    };
+    return typeMoves[type] || 'Tackle';
   }
 
   private getMoveTypeColor(type: string): string {

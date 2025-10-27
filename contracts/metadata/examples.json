@@ -1,0 +1,120 @@
+{
+  "examples": [
+    {
+      "name": "Pikachu",
+      "rarity": "Rare",
+      "type": "Electric",
+      "stats": {
+        "attack": 55,
+        "defense": 40,
+        "speed": 90,
+        "hp": 35,
+        "yieldStat": 0
+      },
+      "level": 5,
+      "evolution_stage": 0,
+      "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png",
+      "description": "An agile Yokai that stores electricity in its cheeks. It thunderbolts opponents when threatened.",
+      "caught_at": 1734392800,
+      "caught_by": "PLAYER_ADDRESS_HERE",
+      "properties": {
+        "legendary": false,
+        "trade_enabled": true,
+        "max_supply": 1000000
+      }
+    },
+    {
+      "name": "Charizard",
+      "rarity": "Rare",
+      "type": "Fire",
+      "stats": {
+        "attack": 84,
+        "defense": 78,
+        "speed": 100,
+        "hp": 78,
+        "yieldStat": 5
+      },
+      "level": 36,
+      "evolution_stage": 2,
+      "evolution_lineage": ["ASSET_1001", "ASSET_1002"],
+      "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/6.png",
+      "description": "A fully evolved fire dragon that can melt anything with its flames. Evolved Charizards can generate yield.",
+      "caught_at": 1734392800,
+      "caught_by": "PLAYER_ADDRESS_HERE",
+      "properties": {
+        "legendary": false,
+        "trade_enabled": true,
+        "max_supply": 100000
+      }
+    },
+    {
+      "name": "Mewtwo",
+      "rarity": "Legendary",
+      "type": "Psychic",
+      "stats": {
+        "attack": 110,
+        "defense": 90,
+        "speed": 130,
+        "hp": 106,
+        "yieldStat": 20
+      },
+      "level": 70,
+      "evolution_stage": 0,
+      "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/150.png",
+      "description": "The ultimate legendary Psychic-type Yokai. Only ONE can exist in the entire Yokai universe. A prized possession for any trainer.",
+      "caught_at": 1734392800,
+      "caught_by": "LEGENDARY_TRAINER_ADDRESS",
+      "properties": {
+        "legendary": true,
+        "trade_enabled": true,
+        "max_supply": 1
+      }
+    },
+    {
+      "name": "Rayquaza",
+      "rarity": "Legendary",
+      "type": "Dragon",
+      "stats": {
+        "attack": 150,
+        "defense": 90,
+        "speed": 95,
+        "hp": 105,
+        "yieldStat": 25
+      },
+      "level": 70,
+      "evolution_stage": 0,
+      "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/384.png",
+      "description": "The Sky High Pokémon that soars through the ozone layer. This legendary dragon is a 1/1 NFT with maximum yield potential.",
+      "caught_at": 1734392800,
+      "caught_by": "LEGENDARY_TRAINER_ADDRESS",
+      "properties": {
+        "legendary": true,
+        "trade_enabled": true,
+        "max_supply": 1
+      }
+    },
+    {
+      "name": "Squirtle",
+      "rarity": "Common",
+      "type": "Water",
+      "stats": {
+        "attack": 48,
+        "defense": 65,
+        "speed": 43,
+        "hp": 44,
+        "yieldStat": 0
+      },
+      "level": 1,
+      "evolution_stage": 0,
+      "image": "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/7.png",
+      "description": "A tiny turtle Yokai with a hard shell for protection. Withdraws into its shell when threatened.",
+      "caught_at": 1734392800,
+      "caught_by": "PLAYER_ADDRESS_HERE",
+      "properties": {
+        "legendary": false,
+        "trade_enabled": true,
+        "max_supply": 1000000
+      }
+    }
+  ]
+}

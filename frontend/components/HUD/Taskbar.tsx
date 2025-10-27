@@ -6,11 +6,10 @@ interface Props {
   onInventory?: () => void;
   onTeam?: () => void;
   onMarket?: () => void; // optional override
-  onWallet?: () => void; // optional override
   starterPokemon?: StarterPokemon | null;
 }
 
-export default function Taskbar({ onInventory, onTeam, onMarket, onWallet, starterPokemon }: Props) {
+export default function Taskbar({ onInventory, onTeam, onMarket, starterPokemon }: Props) {
   const Item = ({ icon, label, onClick, href, disabled }: { icon: string; label: string; onClick?: () => void; href?: string; disabled?: boolean }) => {
     const content = (
       <motion.button
@@ -53,7 +52,6 @@ export default function Taskbar({ onInventory, onTeam, onMarket, onWallet, start
       <Item icon="🎒" label="Inventory" onClick={onInventory} />
       <Item icon="👥" label="Team" onClick={onTeam} />
       <Item icon="💰" label="Market" href="/market" onClick={onMarket} />
-      <Item icon="🔗" label="Wallet" onClick={onWallet} />
     </div>
   );
 }
