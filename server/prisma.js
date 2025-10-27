@@ -1,13 +1,5 @@
 // PrismaClient singleton helper
-// Tries custom output first (as set in prisma/schema.prisma), then falls back to @prisma/client
-let PrismaClient;
-try {
-  // eslint-disable-next-line import/no-unresolved, global-require
-  ({ PrismaClient } = require("../../node_modules/.prisma/client"));
-} catch (e) {
-  // eslint-disable-next-line global-require
-  ({ PrismaClient } = require("@prisma/client"));
-}
+const { PrismaClient } = require("@prisma/client");
 
 const globalForPrisma = global;
 

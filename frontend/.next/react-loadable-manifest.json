@@ -11,10 +11,28 @@
       "static/chunks/_pages-dir-browser_node_modules_next_dist_pages__error_js.js"
     ]
   },
+  "..\\components\\Modals\\InventoryModal.tsx -> ../../lib/api/pokemonApi": {
+    "id": "..\\components\\Modals\\InventoryModal.tsx -> ../../lib/api/pokemonApi",
+    "files": [
+      "static/chunks/_pages-dir-browser_lib_api_pokemonApi_ts.js"
+    ]
+  },
   "pages\\index.jsx -> ../../components/Game": {
     "id": "pages\\index.jsx -> ../../components/Game",
     "files": [
       "static/chunks/_pages-dir-browser_components_Game_tsx.js"
+    ]
+  },
+  "pages\\index.jsx -> ../../lib/api/pokemonApi": {
+    "id": "pages\\index.jsx -> ../../lib/api/pokemonApi",
+    "files": [
+      "static/chunks/_pages-dir-browser_lib_api_pokemonApi_ts.js"
+    ]
+  },
+  "pages\\market.jsx -> ../../lib/api/pokemonApi": {
+    "id": "pages\\market.jsx -> ../../lib/api/pokemonApi",
+    "files": [
+      "static/chunks/_pages-dir-browser_lib_api_pokemonApi_ts.js"
     ]
   }
 }

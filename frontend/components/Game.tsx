@@ -6,8 +6,6 @@ import { GameScene } from "../lib/phaser/GameScene";
 import { BattleScene } from "../lib/phaser/BattleScene";
 
 interface GameProps {
-  width?: number;
-  height?: number;
   className?: string;
   tileSize?: number;
   mapWidth?: number;
@@ -17,12 +15,11 @@ interface GameProps {
   initialY?: number;
   onPokemonSpotted?: (pokemon: { name: string; spriteUrl: string; pokeId: number }) => void;
   onPokemonCleared?: () => void;
+  onSpawnsUpdate?: (spawns: any[]) => void;
   playerPokemon?: any;
 }
 
 export default function Game({
-  width = 800,
-  height = 600,
   className = "",
   tileSize = 32,
   mapWidth = 50,
@@ -32,6 +29,7 @@ export default function Game({
   initialY,
   onPokemonSpotted,
   onPokemonCleared,
+  onSpawnsUpdate,
   playerPokemon,
 }: GameProps) {
   const gameRef = useRef<HTMLDivElement>(null);
@@ -40,12 +38,15 @@ export default function Game({
   useEffect(() => {
     if (!gameRef.current) return;
 
+    const getSize = () => ({ w: gameRef.current!.clientWidth, h: gameRef.current!.clientHeight });
+    const { w, h } = getSize();
+
     const config: Phaser.Types.Core.GameConfig = {
       type: Phaser.AUTO,
-      width,
-      height,
+      width: Math.max(320, w),
+      height: Math.max(240, h),
       parent: gameRef.current,
-      backgroundColor: "#2c3e50",
+      backgroundColor: "#0b0e14",
       physics: {
         default: "arcade",
         arcade: {
@@ -55,7 +56,7 @@ export default function Game({
       },
       scene: [GameScene, BattleScene],
       scale: {
-        mode: Phaser.Scale.FIT,
+        mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH,
       },
     };
@@ -73,6 +74,7 @@ export default function Game({
         initialY,
         onPokemonSpotted,
         onPokemonCleared,
+        onSpawnsUpdate,
         playerPokemon,
       };
       const mgr = game.scene;
@@ -87,19 +89,27 @@ export default function Game({
     if (phaserGameRef.current.isBooted) startOrRestart();
     else phaserGameRef.current.events.once(Phaser.Core.Events.READY, startOrRestart);
 
+    const ro = new ResizeObserver(() => {
+      if (!phaserGameRef.current || !gameRef.current) return;
+      const { w: nw, h: nh } = getSize();
+      phaserGameRef.current.scale.resize(Math.max(320, nw), Math.max(240, nh));
+    });
+    ro.observe(gameRef.current);
+
     return () => {
+      ro.disconnect();
       if (phaserGameRef.current) {
         phaserGameRef.current.destroy(true);
         phaserGameRef.current = null;
       }
     };
-  }, [width, height, tileSize, mapWidth, mapHeight, playerSpeed, initialX, initialY, onPokemonSpotted, onPokemonCleared, playerPokemon]);
+  }, [tileSize, mapWidth, mapHeight, playerSpeed, initialX, initialY, onPokemonSpotted, onPokemonCleared, onSpawnsUpdate, playerPokemon]);
 
   return (
     <div
       ref={gameRef}
       className={`game-container ${className}`}
-      style={{ width: "100%", height: "100%", display: "flex", justifyContent: "center", alignItems: "center" }}
+      style={{ width: "100%", height: "100%" }}
     />
   );
 }

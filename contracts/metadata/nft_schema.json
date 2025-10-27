@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Yokai NFT Metadata Schema",
+  "description": "Metadata schema for Yokai (Pokemon) NFTs following ARC-19 and ARC-69 standards",
+  "type": "object",
+  "required": ["name", "rarity", "type", "stats", "evolution_stage", "image", "description"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Pokemon name (e.g., Pikachu, Mewtwo)",
+      "examples": ["Pikachu", "Charizard", "Mewtwo"]
+    },
+    "rarity": {
+      "type": "string",
+      "enum": ["Common", "Uncommon", "Rare", "Legendary", "Mythical"],
+      "description": "Rarity tier of the Yokai NFT"
+    },
+    "type": {
+      "type": "string",
+      "description": "Pokemon type (e.g., Fire, Water, Electric)",
+      "examples": ["Fire", "Water", "Electric", "Psychic"]
+    },
+    "stats": {
+      "type": "object",
+      "required": ["attack", "defense", "speed", "hp"],
+      "properties": {
+        "attack": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255,
+          "description": "Attack stat"
+        },
+        "defense": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255,
+          "description": "Defense stat"
+        },
+        "speed": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255,
+          "description": "Speed stat"
+        },
+        "hp": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255,
+          "description": "HP stat"
+        },
+        "yieldStat": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Yield generation capability (0 = no yield)"
+        }
+      }
+    },
+    "level": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "default": 1,
+      "description": "Current level of the Yokai"
+    },
+    "evolution_stage": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3,
+      "description": "Evolution stage (0=base, 1=first evolution, 2=second evolution)"
+    },
+    "evolution_lineage": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Array of NFT IDs that were burned to create this evolved form",
+      "examples": [["ASSET_1234", "ASSET_1235"]]
+    },
+    "image": {
+      "type": "string",
+      "format": "uri",
+      "description": "IPFS or HTTP URL to the Pokemon sprite/image",
+      "examples": ["ipfs://QmABC123xyz", "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png"]
+    },
+    "description": {
+      "type": "string",
+      "description": "Flavor text describing the Yokai",
+      "examples": ["An agile Yokai that stores electricity in its cheeks."]
+    },
+    "caught_at": {
+      "type": "integer",
+      "description": "Unix timestamp when the Yokai was caught"
+    },
+    "caught_by": {
+      "type": "string",
+      "description": "Algorand address of the original catcher"
+    },
+    "properties": {
+      "type": "object",
+      "description": "Additional ARC-69 compliant properties",
+      "properties": {
+        "legendary": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this is a legendary (1/1) NFT"
+        },
+        "trade_enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether this NFT can be traded"
+        },
+        "max_supply": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1000000,
+          "description": "Maximum supply for this species (1 for legendaries)"
+        }
+      }
+    }
+  }
+}

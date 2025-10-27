@@ -1,4 +1,16 @@
-const API_BASE = 'http://localhost:4000/api';
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") || 'http://localhost:4000/api';
+
+async function safeFetch(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 3000) {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    const res = await fetch(input, { ...(init || {}), signal: ctrl.signal });
+    clearTimeout(t);
+    return res;
+  } catch {
+    return null as unknown as Response;
+  }
+}
 
 export interface PlayerPokemon {
   id: string;
@@ -14,11 +26,9 @@ export interface PlayerPokemon {
 
 export async function fetchPlayerPokemon(): Promise<PlayerPokemon[]> {
   try {
-    const response = await fetch(`${API_BASE}/pokemon`);
-    
-    if (!response.ok) return [];
-    
-    const data = await response.json();
+    const response = await safeFetch(`${API_BASE}/pokemon`);
+    if (!response || !(response as any).ok) return [];
+    const data = await (response as any).json();
     
     // Enhance with sprite URLs from PokéAPI
     const enhancedPokemon = await Promise.all(
@@ -40,22 +50,18 @@ export async function fetchPlayerPokemon(): Promise<PlayerPokemon[]> {
     );
     
     return enhancedPokemon;
-  } catch (error) {
-    console.error('Failed to fetch player Pokémon:', error);
+  } catch {
     return [];
   }
 }
 
 export async function getPlayerInventory(): Promise<{ pokeball: number; greatball: number; ultraball: number; masterball: number }> {
   try {
-    const response = await fetch(`${API_BASE}/inventory`);
-    
-    if (!response.ok) return { pokeball: 0, greatball: 0, ultraball: 0, masterball: 0 };
-    
-    const data = await response.json();
+    const response = await safeFetch(`${API_BASE}/inventory`);
+    if (!response || !(response as any).ok) return { pokeball: 0, greatball: 0, ultraball: 0, masterball: 0 };
+    const data = await (response as any).json();
     return data.balls || { pokeball: 0, greatball: 0, ultraball: 0, masterball: 0 };
-  } catch (error) {
-    console.error('Failed to fetch inventory:', error);
+  } catch {
     return { pokeball: 0, greatball: 0, ultraball: 0, masterball: 0 };
   }
 }
