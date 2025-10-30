@@ -18,8 +18,9 @@ export interface SceneConfig {
   initialY?: number;
   onPokemonSpotted?: (pokemon: { name: string; spriteUrl: string; pokeId: number }) => void;
   onPokemonCleared?: () => void;
-  onSpawnsUpdate?: (spawns: { key: string; name: string; pokeId: number; spriteUrl: string; position: { x: number; y: number } }[]) => void;
+  onSpawnsUpdate?: (spawns: { key: string; name: string; pokeId: number; spriteUrl: string; position: { x: number; y: number }; level: number; rarity: string }[]) => void;
   playerPokemon?: any; // Selected Pokémon for battle
+  trainerLevel?: number; // Trainer level for spawn balancing
 }
 
 type SpawnRecord = {
@@ -70,8 +71,13 @@ export class GameScene extends Phaser.Scene {
   private miniW = 160;
   private miniH = 160;
 
-  // Toast notification
+// Toast notification
   private toast?: Phaser.GameObjects.Text;
+  private autosaveTimer?: Phaser.Time.TimerEvent;
+  private hud?: Phaser.GameObjects.Container;
+  private hudText?: Phaser.GameObjects.Text;
+  private hudBarBg?: Phaser.GameObjects.Rectangle;
+  private hudBarFg?: Phaser.GameObjects.Rectangle;
 
   // Structures
   private structures: StructureDef[] = [];
@@ -230,8 +236,12 @@ export class GameScene extends Phaser.Scene {
     // Minimap overlay (no grid lines)
     this.createMiniMap();
 
-    // Zone-aware spawn manager
-    this.spawnManager = new SpawnManager(this, tileSize, mapWidth, mapHeight);
+    // HUD (Level + XP)
+    this.createHUD();
+
+    // Zone-aware spawn manager with trainer level
+    const trainerLevel = this.configData.trainerLevel || 1;
+    this.spawnManager = new SpawnManager(this, tileSize, mapWidth, mapHeight, trainerLevel);
     this.spawnManager.on("spawned", (rec: any) => {
       this.addMiniMarker(rec.key, rec.position.x, rec.position.y);
       this.statusOnce(`A wild ${capitalize(rec.name)} appeared near you!`, 800);
@@ -262,6 +272,19 @@ export class GameScene extends Phaser.Scene {
     });
     this.generateStructures();
     this.spawnManager.start();
+
+    // Load trainer data if wallet connected
+    this.initTrainerPersistence();
+
+    // Autosave every ~2.5 minutes
+    this.autosaveTimer = this.time.addEvent({ delay: 150000, loop: true, callback: () => this.autosave("interval") });
+
+    // Save on unload
+    if (typeof window !== 'undefined') {
+      const handler = () => { this.autosave("unload"); };
+      window.addEventListener('beforeunload', handler);
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => window.removeEventListener('beforeunload', handler));
+    }
   }
 
   update() {
@@ -320,6 +343,75 @@ export class GameScene extends Phaser.Scene {
     if (now - this.lastStatusAt < cooldownMs) return;
     this.lastStatusAt = now;
     // React sidebar now handles messaging
+  }
+
+  private createHUD() {
+    const w = 220; const h = 14;
+    this.hud = this.add.container(12, 48).setScrollFactor(0).setDepth(2000);
+    const bg = this.add.rectangle(0, 0, w, h + 16, 0x000000, 0.5).setOrigin(0);
+    this.hudBarBg = this.add.rectangle(10, 8, w - 20, h, 0x333333, 1).setOrigin(0);
+    this.hudBarFg = this.add.rectangle(10, 8, 0, h, 0x2ecc71, 1).setOrigin(0);
+    this.hudText = this.add.text(12, -8, 'Lv.1 0/100 XP', { fontSize: '12px', color: '#fff' });
+    this.hud.add([bg, this.hudBarBg, this.hudBarFg, this.hudText!]);
+  }
+
+  private updateHUD(level: number, currentXP: number, nextLevelXP: number) {
+    const w = (this.hudBarBg?.width || 200);
+    const pct = Math.max(0, Math.min(1, (nextLevelXP ? currentXP / nextLevelXP : 0)));
+    if (this.hudBarFg) this.hudBarFg.width = Math.floor(w * pct);
+    if (this.hudText) this.hudText.setText(`Lv.${level} ${currentXP}/${nextLevelXP} XP`);
+  }
+
+  private async initTrainerPersistence() {
+    try {
+      const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
+      if (!wallet) return;
+      const { loadTrainer, autosaveTrainer } = await import('../../src/services/trainer');
+      const { flushQueue } = await import('../../src/services/saveQueue');
+      // try to flush any queued saves first
+      try { await flushQueue(); } catch {}
+      const res = await loadTrainer(wallet).catch(() => null);
+      if (res?.trainer) {
+        const t = res.trainer;
+        if (t?.location) {
+          this.player.setPosition(t.location.x || this.player.x, t.location.y || this.player.y);
+        }
+        if (typeof t.level === 'number') this.configData.trainerLevel = t.level;
+        this.updateHUD(t.level || 1, t.currentXP || 0, t.nextLevelXP || 100);
+        this.showSavedToast('Trainer data loaded successfully!');
+      } else {
+        // create initial snapshot
+        await autosaveTrainer({ walletAddress: wallet, level: 1, xp: 0, location: { x: this.player.x, y: this.player.y, biome: 'grassland' } });
+      }
+    } catch {}
+  }
+
+  private async autosave(reason: string) {
+    try {
+      const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
+      if (!wallet) return;
+      const { autosaveTrainer } = await import('../../src/services/trainer');
+      const xp = typeof window !== 'undefined' ? parseInt(localStorage.getItem('trainer_exp') || '0', 10) : 0;
+      await autosaveTrainer({ walletAddress: wallet, xp, level: this.configData.trainerLevel || 1, location: { x: this.player.x, y: this.player.y } });
+      this.showSavedToast('Progress Saved');
+    } catch (e) {
+      // enqueue offline save
+      try {
+        const base = (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000') + '/api/autosave';
+        const { enqueueSave } = await import('../../src/services/saveQueue');
+        const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : undefined;
+        await enqueueSave({ url: base, method: 'POST', headers: { 'Content-Type': 'application/json', ...(wallet ? { 'x-wallet-address': wallet } : {}) }, body: { walletAddress: wallet, level: this.configData.trainerLevel || 1, location: { x: this.player.x, y: this.player.y } } });
+      } catch {}
+    }
+  }
+
+  private showSavedToast(text: string) {
+    if (this.toast) { this.toast.destroy(); this.toast = undefined; }
+    const t = this.add.text(12, this.scale.height - 28, `💾 ${text}`, { fontSize: '14px', color: '#0f0', backgroundColor: '#000', padding: { x: 8, y: 4 } })
+      .setScrollFactor(0)
+      .setDepth(2000);
+    this.toast = t;
+    this.time.delayedCall(1600, () => { if (t.scene) t.destroy(); if (this.toast === t) this.toast = undefined; });
   }
 
   // ---- Multiplayer (kept) ----
@@ -498,6 +590,7 @@ export class GameScene extends Phaser.Scene {
           pokeId: rec.pokeId,
           data: pokeData,
           spriteUrl: rec.spriteUrl,
+          level: rec.level,
         },
         playerPokemon: {
           name: playerPoke.name || playerPoke.displayName,
@@ -508,6 +601,7 @@ export class GameScene extends Phaser.Scene {
           maxHp: maxHp,
           currentHp: maxHp,
         },
+        trainerLevel: this.configData.trainerLevel || 1,
       });
     } catch {}
   }
@@ -609,6 +703,8 @@ export class GameScene extends Phaser.Scene {
       pokeId: r.pokeId,
       spriteUrl: r.spriteUrl,
       position: r.position,
+      level: r.level,
+      rarity: r.rarity,
       distance: Phaser.Math.Distance.Between(this.player.x, this.player.y, r.position.x, r.position.y),
     }));
     this.configData.onSpawnsUpdate(spawns);

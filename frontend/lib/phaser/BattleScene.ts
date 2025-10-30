@@ -1,4 +1,5 @@
 import * as Phaser from "phaser";
+import { calculateDamage, getMoveData, type PokemonType } from "../typeEffectiveness";
 
 interface BattleData {
   wildPokemon: {
@@ -6,6 +7,7 @@ interface BattleData {
     pokeId: number;
     data: any;
     spriteUrl: string;
+    level?: number;
   };
   playerPokemon: {
     name: string;
@@ -16,6 +18,8 @@ interface BattleData {
     currentHp: number;
     maxHp: number;
   };
+  playerTeam?: any[]; // Full team for switching
+  trainerLevel?: number;
 }
 
 export class BattleScene extends Phaser.Scene {
@@ -25,8 +29,16 @@ export class BattleScene extends Phaser.Scene {
   private playerSprite?: Phaser.GameObjects.Image;
   private wildHp: number = 0;
   private wildMaxHp: number = 0;
+  private wildLevel: number = 5;
   private playerHp: number = 0;
   private playerMaxHp: number = 0;
+  private playerTeam: any[] = [];
+  private trainerLevel: number = 1;
+  
+  // Battle state
+  private isPlayerTurn: boolean = true;
+  private battleInProgress: boolean = false;
+  private lastDamageInfo: { damage: number; effectiveness: string | null } | null = null;
   
   // UI Elements
   private battleUI?: Phaser.GameObjects.Container;
@@ -36,6 +48,7 @@ export class BattleScene extends Phaser.Scene {
   private playerHpText?: Phaser.GameObjects.Text;
   private battleText?: Phaser.GameObjects.Text;
   private actionButtons?: Phaser.GameObjects.Container;
+  private floatingTexts: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super("BattleScene");
@@ -44,14 +57,20 @@ export class BattleScene extends Phaser.Scene {
   init(data: BattleData) {
     this.wildPokemon = data.wildPokemon;
     this.playerPokemon = data.playerPokemon;
+    this.playerTeam = data.playerTeam || [];
+    this.trainerLevel = data.trainerLevel || 1;
     
-    // Calculate HP from stats
+    // Calculate wild Pokemon HP with level scaling
+    this.wildLevel = this.wildPokemon.level || 5;
     const wildHpStat = this.wildPokemon.data?.stats?.find((s: any) => s.stat.name === 'hp')?.base_stat || 50;
-    this.wildMaxHp = Math.floor(wildHpStat * 1.5); // Level scaling
+    this.wildMaxHp = Math.floor((wildHpStat * 2 * this.wildLevel) / 100 + this.wildLevel + 10);
     this.wildHp = this.wildMaxHp;
     
     this.playerMaxHp = this.playerPokemon.maxHp;
     this.playerHp = this.playerPokemon.currentHp;
+    
+    this.isPlayerTurn = true;
+    this.battleInProgress = false;
   }
 
   async preload() {
@@ -140,10 +159,11 @@ export class BattleScene extends Phaser.Scene {
     this.actionButtons = this.add.container(0, 0);
     
     const buttonData = [
-      { text: 'FIGHT', x: width - 200, y: height - 40, action: () => this.showMoveSelection() },
-      { text: 'BAG', x: width - 150, y: height - 40, action: () => this.openBag() },
-      { text: 'CATCH', x: width - 100, y: height - 40, action: () => this.attemptCatch() },
-      { text: 'RUN', x: width - 50, y: height - 40, action: () => this.runAway() }
+      { text: 'FIGHT', x: width - 250, y: height - 40, action: () => this.showMoveSelection() },
+      { text: 'SWITCH', x: width - 190, y: height - 40, action: () => this.showTeamSelection() },
+      { text: 'BAG', x: width - 130, y: height - 40, action: () => this.openBag() },
+      { text: 'CATCH', x: width - 80, y: height - 40, action: () => this.attemptCatch() },
+      { text: 'RUN', x: width - 30, y: height - 40, action: () => this.runAway() }
     ];
 
     buttonData.forEach(btn => {
@@ -162,6 +182,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private showMoveSelection() {
+    if (!this.isPlayerTurn || this.battleInProgress) return;
+    
     // Hide main action buttons
     if (this.actionButtons) this.actionButtons.setVisible(false);
 
@@ -211,6 +233,75 @@ export class BattleScene extends Phaser.Scene {
 
     moveContainer.add(backButton);
     this.battleUI?.add(moveContainer);
+  }
+  
+  private showTeamSelection() {
+    if (!this.isPlayerTurn || this.battleInProgress || this.playerTeam.length === 0) return;
+    
+    // Hide main action buttons
+    if (this.actionButtons) this.actionButtons.setVisible(false);
+
+    const { width, height } = this.scale;
+
+    // Create team selection container
+    const teamContainer = this.add.container(0, 0);
+
+    // Background for team selection
+    const teamBg = this.add.rectangle(width / 2 - 200, height / 2 - 150, 400, 300, 0x222222, 0.95).setOrigin(0);
+    teamContainer.add(teamBg);
+    
+    const title = this.add.text(width / 2, height / 2 - 130, 'Choose Pokemon', {
+      fontSize: '18px',
+      color: '#fff',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    teamContainer.add(title);
+
+    // Display team members
+    this.playerTeam.forEach((pokemon, index) => {
+      const y = height / 2 - 90 + index * 50;
+      const currentHp = pokemon.currentHp || pokemon.maxHp || 100;
+      const maxHp = pokemon.maxHp || 100;
+      const isFainted = currentHp <= 0;
+      const isCurrent = pokemon.id === this.playerPokemon.pokeId;
+      
+      const pokemonButton = this.add.text(width / 2 - 180, y, 
+        `${this.capitalize(pokemon.name)} Lv.${pokemon.level || 1}  HP: ${currentHp}/${maxHp}`, 
+        {
+          fontSize: '14px',
+          color: isFainted ? '#666' : isCurrent ? '#ffd700' : '#fff',
+          backgroundColor: isCurrent ? '#444' : '#333',
+          padding: { x: 10, y: 6 }
+        }
+      ).setOrigin(0);
+      
+      if (!isFainted && !isCurrent) {
+        pokemonButton.setInteractive({ useHandCursor: true })
+          .on('pointerdown', () => {
+            teamContainer.destroy();
+            if (this.actionButtons) this.actionButtons.setVisible(true);
+            this.switchPokemon(pokemon);
+          });
+      }
+
+      teamContainer.add(pokemonButton);
+    });
+
+    // Back button
+    const backButton = this.add.text(width / 2, height / 2 + 130, 'BACK', {
+      fontSize: '14px',
+      color: '#fff',
+      backgroundColor: '#666',
+      padding: { x: 15, y: 8 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => {
+        teamContainer.destroy();
+        if (this.actionButtons) this.actionButtons.setVisible(true);
+      });
+
+    teamContainer.add(backButton);
+    teamContainer.setDepth(1001);
+    this.battleUI?.add(teamContainer);
   }
 
   private getPlayerMoves() {
@@ -288,22 +379,92 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private useMove(move: any) {
-    const playerAttack = this.getStatValue(this.playerPokemon.data, 'attack');
-    const wildDefense = this.getStatValue(this.wildPokemon.data, 'defense');
+    if (this.battleInProgress) return;
+    this.battleInProgress = true;
+    this.isPlayerTurn = false;
     
-    const baseDamage = Math.max(1, playerAttack - wildDefense);
-    const damage = Math.floor(baseDamage * (0.8 + Math.random() * 0.4)); // 0.8-1.2 multiplier
+    // Get move data
+    const moveData = getMoveData(move.name);
+    const playerAttack = this.getStatValue(this.playerPokemon.data, moveData.category === 'physical' ? 'attack' : 'special-attack');
+    const wildDefense = this.getStatValue(this.wildPokemon.data, moveData.category === 'physical' ? 'defense' : 'special-defense');
     
+    // Get Pokemon types
+    const wildTypes = (this.wildPokemon.data?.types || []).map((t: any) => t.type.name) as PokemonType[];
+    
+    // Calculate damage with type effectiveness
+    const damageResult = calculateDamage(
+      this.playerPokemon.level,
+      moveData.power,
+      playerAttack,
+      wildDefense,
+      moveData.type as PokemonType,
+      wildTypes
+    );
+    
+    const damage = damageResult.damage;
     this.wildHp = Math.max(0, this.wildHp - damage);
-    this.updateBattleText(`${this.capitalize(this.playerPokemon.name)} used ${move.name}! Dealt ${damage} damage!`);
+    
+    // Update battle text
+    let battleMsg = `${this.capitalize(this.playerPokemon.name)} used ${moveData.name}!`;
+    this.updateBattleText(battleMsg);
+    
+    // Show floating damage text on wild Pokemon
+    this.time.delayedCall(500, () => {
+      this.showFloatingText(`-${damage} HP`, this.wildSprite!.x, this.wildSprite!.y - 30, '#ff4444');
+      
+      if (damageResult.effectivenessText) {
+        this.time.delayedCall(300, () => {
+          this.showFloatingText(damageResult.effectivenessText!, this.wildSprite!.x, this.wildSprite!.y - 50, '#ffff00');
+        });
+      }
+    });
     
     this.updateHpBars();
     
     if (this.wildHp <= 0) {
-      this.wildDefeated();
+      this.time.delayedCall(2000, () => {
+        this.battleInProgress = false;
+        this.wildDefeated();
+      });
     } else {
-      this.time.delayedCall(1500, () => this.wildAttack());
+      this.time.delayedCall(2000, () => {
+        this.battleInProgress = false;
+        this.wildAttack();
+      });
     }
+  }
+  
+  private switchPokemon(newPokemon: any) {
+    if (this.battleInProgress) return;
+    this.battleInProgress = true;
+    
+    // Update player Pokemon
+    this.playerPokemon = {
+      name: newPokemon.name,
+      pokeId: newPokemon.id,
+      data: newPokemon.data,
+      spriteUrl: newPokemon.sprite,
+      level: newPokemon.level || 1,
+      currentHp: newPokemon.currentHp || newPokemon.maxHp,
+      maxHp: newPokemon.maxHp,
+    };
+    
+    this.playerHp = this.playerPokemon.currentHp;
+    this.playerMaxHp = this.playerPokemon.maxHp;
+    
+    // Update sprite
+    if (this.playerSprite) {
+      this.playerSprite.setTexture(`player-${newPokemon.id}`);
+    }
+    
+    this.updateBattleText(`Go, ${this.capitalize(newPokemon.name)}!`);
+    this.updateHpBars();
+    
+    // Wild Pokemon attacks after switch
+    this.time.delayedCall(2000, () => {
+      this.battleInProgress = false;
+      this.wildAttack();
+    });
   }
 
   private playerAttack() {
@@ -326,20 +487,85 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private wildAttack() {
+    if (this.battleInProgress) return;
+    this.battleInProgress = true;
+    
+    // Pick a random move type based on wild Pokemon's types
+    const wildTypes = (this.wildPokemon.data?.types || []).map((t: any) => t.type.name);
+    const attackType = (wildTypes[0] || 'normal') as PokemonType;
+    const movePower = 50; // Base move power for wild Pokemon
+    
     const wildAttack = this.getStatValue(this.wildPokemon.data, 'attack');
     const playerDefense = this.getStatValue(this.playerPokemon.data, 'defense');
     
-    const baseDamage = Math.max(1, wildAttack - playerDefense);
-    const damage = Math.floor(baseDamage * (0.8 + Math.random() * 0.4));
+    // Get player Pokemon types
+    const playerTypes = (this.playerPokemon.data?.types || []).map((t: any) => t.type.name) as PokemonType[];
     
+    // Calculate damage with type effectiveness
+    const damageResult = calculateDamage(
+      this.wildLevel,
+      movePower,
+      wildAttack,
+      playerDefense,
+      attackType,
+      playerTypes
+    );
+    
+    const damage = damageResult.damage;
     this.playerHp = Math.max(0, this.playerHp - damage);
-    this.updateBattleText(`Wild ${this.capitalize(this.wildPokemon.name)} attacks! Dealt ${damage} damage!`);
+    
+    this.updateBattleText(`Wild ${this.capitalize(this.wildPokemon.name)} attacks!`);
+    
+    // Show floating damage text on player Pokemon
+    this.time.delayedCall(500, () => {
+      this.showFloatingText(`-${damage} HP`, this.playerSprite!.x, this.playerSprite!.y - 30, '#ff4444');
+      
+      if (damageResult.effectivenessText) {
+        this.time.delayedCall(300, () => {
+          this.showFloatingText(damageResult.effectivenessText!, this.playerSprite!.x, this.playerSprite!.y - 50, '#ffff00');
+        });
+      }
+    });
     
     this.updateHpBars();
     
     if (this.playerHp <= 0) {
-      this.playerDefeated();
+      this.time.delayedCall(2000, () => {
+        this.battleInProgress = false;
+        this.playerDefeated();
+      });
+    } else {
+      this.time.delayedCall(1500, () => {
+        this.battleInProgress = false;
+        this.isPlayerTurn = true;
+      });
     }
+  }
+  
+  private showFloatingText(text: string, x: number, y: number, color: string) {
+    const floatingText = this.add.text(x, y, text, {
+      fontSize: '20px',
+      color: color,
+      fontStyle: 'bold',
+      stroke: '#000',
+      strokeThickness: 4
+    }).setOrigin(0.5).setDepth(2000);
+    
+    this.floatingTexts.push(floatingText);
+    
+    // Animate floating text
+    this.tweens.add({
+      targets: floatingText,
+      y: y - 50,
+      alpha: 0,
+      duration: 1500,
+      ease: 'Power2',
+      onComplete: () => {
+        floatingText.destroy();
+        const index = this.floatingTexts.indexOf(floatingText);
+        if (index > -1) this.floatingTexts.splice(index, 1);
+      }
+    });
   }
 
   private async attemptCatch() {
@@ -350,6 +576,25 @@ export class BattleScene extends Phaser.Scene {
       
       // Mint NFT on blockchain
       await this.mintCaughtPokemonNFT();
+
+      // Save caught pokemon to trainer storage
+      try {
+        const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
+        if (wallet) {
+          const { saveTrainer } = await import('../../src/services/trainer');
+          const caught = {
+            name: this.wildPokemon.name,
+            level: this.wildLevel,
+            hp: this.wildMaxHp,
+            attack: this.getStatValue(this.wildPokemon.data, 'attack'),
+            defense: this.getStatValue(this.wildPokemon.data, 'defense'),
+            moves: (this.wildPokemon.data?.moves || []).slice(0, 4).map((m: any) => m.move?.name?.replace(/-/g, ' ')).filter(Boolean),
+            rarity: this.determineRarity(this.wildPokemon.data),
+            caughtAt: new Date(),
+          };
+          await saveTrainer({ walletAddress: wallet, storageAppend: [caught] });
+        }
+      } catch {}
       
       this.time.delayedCall(2000, () => this.endBattle(true));
     } else {
@@ -386,13 +631,12 @@ export class BattleScene extends Phaser.Scene {
         ...this.wildPokemon.data
       };
 
-      const response = await fetch('/api/nft/mint-catch', {
+      const response = await fetch('/api/mint/pokemon', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-wallet-address': walletAddress },
         body: JSON.stringify({
-          pokemonData,
-          playerAddress: walletAddress,
-          userId: this.getUserId() // Get from session/auth
+          walletAddress,
+          pokemon: pokemonData
         })
       });
 
@@ -536,9 +780,30 @@ export class BattleScene extends Phaser.Scene {
     this.time.delayedCall(1500, () => this.endBattle(false));
   }
 
-  private wildDefeated() {
-    const expGained = Math.floor(this.getStatValue(this.wildPokemon.data, 'attack') * 1.5);
+  private async wildDefeated() {
+    // Calculate EXP based on wild Pokemon level and base stats
+    const baseExp = this.wildPokemon.data?.base_experience || 50;
+    const expGained = 10 + (this.wildLevel * 2);
     this.updateBattleText(`Wild ${this.capitalize(this.wildPokemon.name)} fainted! ${this.capitalize(this.playerPokemon.name)} gained ${expGained} EXP!`);
+
+    // Update local cache and backend XP sync
+    try {
+      const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
+      if (wallet) {
+        const cur = parseInt(localStorage.getItem('trainer_exp') || '0');
+        const newTotal = cur + expGained;
+        localStorage.setItem('trainer_exp', String(newTotal));
+        const { xpSync } = await import('../../src/services/trainer');
+        await xpSync({ walletAddress: wallet, newXP: newTotal });
+        window.dispatchEvent(new CustomEvent('trainer-xp-update', { detail: { newXP: newTotal } }));
+      }
+    } catch {}
+
+    // 25% auto-catch chance
+    if (Math.random() < 0.25) {
+      await this.attemptCatch();
+    }
+
     this.time.delayedCall(3000, () => this.endBattle(true));
   }
 

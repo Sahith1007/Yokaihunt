@@ -19,6 +19,12 @@ app.get("/health", (req, res) => {
 
 // Routes
 app.use("/api", pokemonRoutes);
+import trainerRoutes from "./routes/trainer.js";
+app.use("/api", trainerRoutes);
+import nftRoutes from "./routes/nft2.js";
+app.use("/api", nftRoutes);
+import battleRoutes from "./routes/battle.js";
+app.use("/api", battleRoutes);
 
 // Start server
 app.listen(PORT, () => {
