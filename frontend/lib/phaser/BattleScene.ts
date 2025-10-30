@@ -49,6 +49,7 @@ export class BattleScene extends Phaser.Scene {
   private battleText?: Phaser.GameObjects.Text;
   private actionButtons?: Phaser.GameObjects.Container;
   private floatingTexts: Phaser.GameObjects.Text[] = [];
+  private statusToast?: Phaser.GameObjects.Text;
 
   constructor() {
     super("BattleScene");
@@ -98,6 +99,9 @@ export class BattleScene extends Phaser.Scene {
     // Background
     this.add.rectangle(width / 2, height / 2, width, height, 0x87CEEB).setOrigin(0.5);
 
+    // Hide any lingering map UI by drawing an opaque footer (prevents DOM overlap perception)
+    this.add.rectangle(width / 2, height - 18, width, 36, 0x000000, 0.2).setDepth(5);
+
     // Wild Pokémon (enemy, top right)
     this.wildSprite = this.add.image(width * 0.75, height * 0.3, `wild-${this.wildPokemon.pokeId}`)
       .setScale(2)
@@ -109,12 +113,7 @@ export class BattleScene extends Phaser.Scene {
       .setFlipX(true);
 
     this.createUI();
-    this.updateBattleText(`A wild ${this.capitalize(this.wildPokemon.name)} appeared!`);
-    
-    // Auto-hide the appearance message after 3 seconds
-    this.time.delayedCall(3000, () => {
-      this.updateBattleText('What will you do?');
-    });
+    this.toast(`A wild ${this.capitalize(this.wildPokemon.name)} appeared!`, 1500);
   }
 
   private createUI() {
@@ -139,31 +138,31 @@ export class BattleScene extends Phaser.Scene {
       color: '#000'
     });
 
-    // Battle text area
-    const textBg = this.add.rectangle(20, height - 150, width - 40, 100, 0xffffff, 0.9).setOrigin(0);
-    this.battleText = this.add.text(30, height - 140, '', {
-      fontSize: '16px',
-      color: '#000',
-      wordWrap: { width: width - 60 }
-    });
+    // Minimal status toast (top-right), no big dialog box
+    this.battleText = this.add.text(width - 360, 12, '', {
+      fontSize: '14px', color: '#000', backgroundColor: '#ffffffe6', padding: { x: 10, y: 6 }, wordWrap: { width: 340 }
+    }).setDepth(1002).setVisible(false);
 
-    // Action buttons
+    // Action buttons (placed at right-middle as vertical stack)
     this.createActionButtons();
 
-    this.battleUI.add([wildHpBg, this.wildHpBar, this.wildHpText, playerHpBg, this.playerHpBar, this.playerHpText, textBg, this.battleText]);
+    this.battleUI.add([wildHpBg, this.wildHpBar, this.wildHpText, playerHpBg, this.playerHpBar, this.playerHpText]);
   }
 
   private createActionButtons() {
     const { width, height } = this.scale;
-    
+
     this.actionButtons = this.add.container(0, 0);
-    
+
+    const baseX = width - 120;
+    const baseY = height / 2 - 100;
+    const vGap = 34;
     const buttonData = [
-      { text: 'FIGHT', x: width - 250, y: height - 120, action: () => this.showMoveSelection() },
-      { text: 'SWITCH', x: width - 190, y: height - 120, action: () => this.showTeamSelection() },
-      { text: 'BAG', x: width - 130, y: height - 120, action: () => this.openBag() },
-      { text: 'CATCH', x: width - 80, y: height - 120, action: () => this.attemptCatch() },
-      { text: 'RUN', x: width - 30, y: height - 120, action: () => this.runAway() }
+      { text: 'FIGHT', x: baseX, y: baseY + vGap * 0, action: () => this.showMoveSelection() },
+      { text: 'SWITCH', x: baseX, y: baseY + vGap * 1, action: () => this.showTeamSelection() },
+      { text: 'BAG', x: baseX, y: baseY + vGap * 2, action: () => this.openBag() },
+      { text: 'CATCH', x: baseX, y: baseY + vGap * 3, action: () => this.attemptCatch() },
+      { text: 'RUN', x: baseX, y: baseY + vGap * 4, action: () => this.runAway() }
     ];
 
     buttonData.forEach(btn => {
@@ -183,7 +182,7 @@ export class BattleScene extends Phaser.Scene {
 
   private showMoveSelection() {
     if (!this.isPlayerTurn || this.battleInProgress) return;
-    
+
     // Hide main action buttons
     if (this.actionButtons) this.actionButtons.setVisible(false);
 
@@ -193,16 +192,17 @@ export class BattleScene extends Phaser.Scene {
     // Create move selection container
     const moveContainer = this.add.container(0, 0);
 
-    // Background for move selection
-    const moveBg = this.add.rectangle(width - 320, height - 120, 300, 100, 0x222222, 0.95).setOrigin(0);
+    // Background for move selection (right-center panel)
+    const panelW = 300; const panelH = 140;
+    const moveBg = this.add.rectangle(width - panelW - 20, height / 2 - panelH / 2, panelW, panelH, 0x222222, 0.95).setOrigin(0);
     moveContainer.add(moveBg);
 
     // Display up to 4 moves in a 2x2 grid
     moves.slice(0, 4).forEach((move, index) => {
       const col = index % 2;
       const row = Math.floor(index / 2);
-      const x = width - 310 + col * 150;
-      const y = height - 110 + row * 45;
+      const x = width - panelW - 10 + col * 150;
+      const y = height / 2 - panelH / 2 + 10 + row * 60;
 
       const moveButton = this.add.text(x, y, move.name.toUpperCase(), {
         fontSize: '13px',
@@ -220,7 +220,7 @@ export class BattleScene extends Phaser.Scene {
     });
 
     // Back button
-    const backButton = this.add.text(width - 250, height - 20, 'BACK', {
+    const backButton = this.add.text(width - panelW, height / 2 + panelH / 2 + 8, 'BACK', {
       fontSize: '12px',
       color: '#fff',
       backgroundColor: '#666',
@@ -236,7 +236,16 @@ export class BattleScene extends Phaser.Scene {
   }
   
   private showTeamSelection() {
-    if (!this.isPlayerTurn || this.battleInProgress || this.playerTeam.length === 0) return;
+    if (!this.isPlayerTurn || this.battleInProgress) return;
+    if (this.playerTeam.length === 0) {
+      // Try lazy-load team from trainer storage
+      this.loadTrainerTeam().then(() => this.internalShowTeamSelection());
+      return;
+    }
+    this.internalShowTeamSelection();
+  }
+
+  private internalShowTeamSelection() {
     
     // Hide main action buttons
     if (this.actionButtons) this.actionButtons.setVisible(false);
@@ -593,6 +602,16 @@ export class BattleScene extends Phaser.Scene {
             caughtAt: new Date(),
           };
           await saveTrainer({ walletAddress: wallet, storageAppend: [caught] });
+          // Add to local team cache so SWITCH can use it immediately
+          this.playerTeam.push({
+            id: this.wildPokemon.pokeId,
+            name: this.wildPokemon.name,
+            data: this.wildPokemon.data,
+            sprite: this.wildPokemon.spriteUrl,
+            level: this.wildLevel,
+            maxHp: this.wildMaxHp,
+            currentHp: this.wildMaxHp,
+          });
         }
       } catch {}
       
@@ -834,9 +853,29 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private updateBattleText(text: string) {
-    if (this.battleText) {
-      this.battleText.setText(text);
-    }
+    if (!this.battleText) return;
+    this.battleText.setText(text);
+   }
+
+  private async loadTrainerTeam() {
+    try {
+      const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
+      if (!wallet) return;
+      const res = await fetch(`/api/trainer/load/${encodeURIComponent(wallet)}`, { headers: { 'x-wallet-address': wallet } });
+      if (!res.ok) return;
+      const data = await res.json();
+      const trainer = data?.trainer;
+      const fromStorage = (trainer?.storage || []).slice(0, 6).map((p: any) => ({
+        id: p.pokeId || p.id || 0,
+        name: p.name,
+        data: this.wildPokemon?.data, // fallback; detailed per-mon data can be lazy-loaded later
+        sprite: p.image_url || this.playerPokemon.spriteUrl,
+        level: p.level || 1,
+        maxHp: p.hp || 50,
+        currentHp: p.hp || 50,
+      }));
+      if (fromStorage.length) this.playerTeam = fromStorage;
+    } catch {}
   }
 
   private getStatValue(pokemonData: any, statName: string): number {
