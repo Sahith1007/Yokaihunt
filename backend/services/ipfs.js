@@ -1,21 +1,29 @@
 import { create } from 'ipfs-http-client';
-import { NFTStorage, File } from 'nft.storage';
 
-function getNftClient() {
-  const token = process.env.NFT_STORAGE_TOKEN;
-  if (!token) return null;
-  return new NFTStorage({ token });
+async function getNftClient() {
+  try {
+    const token = process.env.NFT_STORAGE_TOKEN;
+    if (!token) return null;
+    // Dynamic import to avoid hard dependency
+    const mod = await import('nft.storage');
+    const { NFTStorage } = mod;
+    return new NFTStorage({ token });
+  } catch {
+    return null;
+  }
 }
 
 export async function uploadJsonToIPFS(json) {
   const asString = typeof json === 'string' ? json : JSON.stringify(json);
 
   // Prefer NFT.Storage if available
-  const nftClient = getNftClient();
-  if (nftClient) {
-    const cid = await nftClient.storeBlob(new Blob([asString], { type: 'application/json' }));
-    return { cid: cid.toString() };
-  }
+  try {
+    const nftClient = await getNftClient();
+    if (nftClient) {
+      const cid = await nftClient.storeBlob(new Blob([asString], { type: 'application/json' }));
+      return { cid: cid.toString() };
+    }
+  } catch {}
 
   // Fallback to public IPFS client
   const projectId = process.env.IPFS_PROJECT_ID;

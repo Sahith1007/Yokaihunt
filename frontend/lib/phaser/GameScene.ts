@@ -347,7 +347,9 @@ export class GameScene extends Phaser.Scene {
 
   private createHUD() {
     const w = 220; const h = 14;
-    this.hud = this.add.container(12, 48).setScrollFactor(0).setDepth(2000);
+    // Place HUD below minimap to avoid overlap
+    const y = (this.miniH || 160) + 20;
+    this.hud = this.add.container(12, y).setScrollFactor(0).setDepth(2000);
     const bg = this.add.rectangle(0, 0, w, h + 16, 0x000000, 0.5).setOrigin(0);
     this.hudBarBg = this.add.rectangle(10, 8, w - 20, h, 0x333333, 1).setOrigin(0);
     this.hudBarFg = this.add.rectangle(10, 8, 0, h, 0x2ecc71, 1).setOrigin(0);

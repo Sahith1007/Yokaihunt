@@ -159,11 +159,11 @@ export class BattleScene extends Phaser.Scene {
     this.actionButtons = this.add.container(0, 0);
     
     const buttonData = [
-      { text: 'FIGHT', x: width - 250, y: height - 40, action: () => this.showMoveSelection() },
-      { text: 'SWITCH', x: width - 190, y: height - 40, action: () => this.showTeamSelection() },
-      { text: 'BAG', x: width - 130, y: height - 40, action: () => this.openBag() },
-      { text: 'CATCH', x: width - 80, y: height - 40, action: () => this.attemptCatch() },
-      { text: 'RUN', x: width - 30, y: height - 40, action: () => this.runAway() }
+      { text: 'FIGHT', x: width - 250, y: height - 120, action: () => this.showMoveSelection() },
+      { text: 'SWITCH', x: width - 190, y: height - 120, action: () => this.showTeamSelection() },
+      { text: 'BAG', x: width - 130, y: height - 120, action: () => this.openBag() },
+      { text: 'CATCH', x: width - 80, y: height - 120, action: () => this.attemptCatch() },
+      { text: 'RUN', x: width - 30, y: height - 120, action: () => this.runAway() }
     ];
 
     buttonData.forEach(btn => {
