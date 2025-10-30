@@ -7,6 +7,10 @@ const playerSchema = new mongoose.Schema({
   inventory: { type: Object, default: {} },
   battlesWon: { type: Number, default: 0 },
   battlesLost: { type: Number, default: 0 },
+  // Trainer progression
+  trainerLevel: { type: Number, default: 1 },
+  experience: { type: Number, default: 0 },
+  totalExperience: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
 });
 

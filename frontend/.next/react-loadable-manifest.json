@@ -17,6 +17,24 @@
       "static/chunks/_pages-dir-browser_lib_api_pokemonApi_ts.js"
     ]
   },
+  "..\\lib\\phaser\\BattleScene.ts -> ../../src/services/trainer": {
+    "id": "..\\lib\\phaser\\BattleScene.ts -> ../../src/services/trainer",
+    "files": [
+      "static/chunks/_pages-dir-browser_src_services_trainer_ts.js"
+    ]
+  },
+  "..\\lib\\phaser\\GameScene.ts -> ../../src/services/saveQueue": {
+    "id": "..\\lib\\phaser\\GameScene.ts -> ../../src/services/saveQueue",
+    "files": [
+      "static/chunks/_pages-dir-browser_src_services_saveQueue_ts.js"
+    ]
+  },
+  "..\\lib\\phaser\\GameScene.ts -> ../../src/services/trainer": {
+    "id": "..\\lib\\phaser\\GameScene.ts -> ../../src/services/trainer",
+    "files": [
+      "static/chunks/_pages-dir-browser_src_services_trainer_ts.js"
+    ]
+  },
   "pages\\index.jsx -> ../../components/Game": {
     "id": "pages\\index.jsx -> ../../components/Game",
     "files": [
