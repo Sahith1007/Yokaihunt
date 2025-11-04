@@ -34,6 +34,7 @@ export class BattleScene extends Phaser.Scene {
   private playerMaxHp: number = 0;
   private playerTeam: any[] = [];
   private trainerLevel: number = 1;
+  private battleTeamHp: Map<number, number> = new Map(); // Track HP during battle
   
   // Battle state
   private isPlayerTurn: boolean = true;
@@ -61,14 +62,28 @@ export class BattleScene extends Phaser.Scene {
     this.playerTeam = data.playerTeam || [];
     this.trainerLevel = data.trainerLevel || 1;
     
-    // Calculate wild Pokemon HP with level scaling
+// Calculate wild Pokemon HP with level scaling (include IV ~31) and minimum floor
     this.wildLevel = this.wildPokemon.level || 5;
     const wildHpStat = this.wildPokemon.data?.stats?.find((s: any) => s.stat.name === 'hp')?.base_stat || 50;
-    this.wildMaxHp = Math.floor((wildHpStat * 2 * this.wildLevel) / 100 + this.wildLevel + 10);
+    this.wildMaxHp = Math.floor((((2 * wildHpStat + 31) * this.wildLevel) / 100) + this.wildLevel + 10);
+    this.wildMaxHp = Math.max(24, this.wildMaxHp);
     this.wildHp = this.wildMaxHp;
     
-    this.playerMaxHp = this.playerPokemon.maxHp;
-    this.playerHp = this.playerPokemon.currentHp;
+    // Ensure player HP has sane floor and IV-based calc if missing
+    this.playerMaxHp = Math.max(
+      this.playerPokemon.maxHp || 0,
+      Math.floor((((2 * (this.playerPokemon.data?.stats?.find((s: any) => s.stat.name === 'hp')?.base_stat || 50) + 31) * this.playerPokemon.level) / 100) + this.playerPokemon.level + 10)
+    );
+    this.playerMaxHp = Math.max(28, this.playerMaxHp);
+    this.playerHp = Math.min(this.playerMaxHp, this.playerPokemon.currentHp || this.playerMaxHp);
+    
+    // Initialize battle HP tracking - all Pokemon start at full HP at battle start
+    this.battleTeamHp.clear();
+    this.playerTeam.forEach(p => {
+      this.battleTeamHp.set(p.id, p.maxHp);
+    });
+    // Set current Pokemon HP
+    this.battleTeamHp.set(this.playerPokemon.pokeId, this.playerHp);
     
     this.isPlayerTurn = true;
     this.battleInProgress = false;
@@ -113,7 +128,7 @@ export class BattleScene extends Phaser.Scene {
       .setFlipX(true);
 
     this.createUI();
-    this.toast(`A wild ${this.capitalize(this.wildPokemon.name)} appeared!`, 1500);
+    this.showToast(`A wild ${this.capitalize(this.wildPokemon.name)} appeared!`, 1500);
   }
 
   private createUI() {
@@ -269,8 +284,8 @@ export class BattleScene extends Phaser.Scene {
     // Display team members
     this.playerTeam.forEach((pokemon, index) => {
       const y = height / 2 - 90 + index * 50;
-      const currentHp = pokemon.currentHp || pokemon.maxHp || 100;
       const maxHp = pokemon.maxHp || 100;
+      const currentHp = this.battleTeamHp.get(pokemon.id) || maxHp;
       const isFainted = currentHp <= 0;
       const isCurrent = pokemon.id === this.playerPokemon.pokeId;
       
@@ -314,29 +329,99 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private getPlayerMoves() {
-    // Get moves from Pokemon data
-    const moves = this.playerPokemon.data?.moves || [];
-    
-    // If Pokemon has no moves, provide default moves based on type or generic attacks
-    if (moves.length === 0) {
-      // Fallback moves if Pokemon has no move data
-      const types = this.playerPokemon.data?.types || [];
-      const primaryType = types[0]?.type?.name || 'normal';
-      
-      return [
-        { name: 'Tackle', type: 'normal' },
-        { name: 'Scratch', type: 'normal' },
-        { name: this.getTypedMove(primaryType), type: primaryType },
-        { name: 'Quick Attack', type: 'normal' }
-      ];
+    // Ensure 4 unique moves with at least one STAB (type-matching) move
+    const pokemonMoves = this.playerPokemon.data?.moves || [];
+    const types = (this.playerPokemon.data?.types || []).map((t: any) => t.type.name);
+    const primaryType: string = types[0] || 'normal';
+    const secondaryType: string | undefined = types[1];
+
+    type MoveLite = { name: string; type: string };
+    const chosen: MoveLite[] = [];
+    const seen = new Set<string>();
+
+    const addMove = (name: string) => {
+      const data = getMoveData(name);
+      const norm = name.toLowerCase().replace(/\s+/g, '-');
+      if (data.power <= 0) return;
+      if (seen.has(norm)) return;
+      seen.add(norm);
+      chosen.push({ name: data.name, type: data.type });
+    };
+
+    // 1) Prefer STAB from PokeAPI-provided moves if available
+    const shuffled = [...pokemonMoves].sort(() => Math.random() - 0.5);
+    for (const m of shuffled) {
+      const moveName = m.move?.name as string | undefined;
+      if (!moveName) continue;
+      const data = getMoveData(moveName);
+      if (data.power > 0 && types.includes(data.type)) {
+        addMove(data.name);
+        if (chosen.length >= 2) break; // grab up to two STAB options first
+      }
     }
-    
-    // Filter to get learned moves (simplified - just take first 4)
-    return moves.slice(0, 4).map((m: any) => ({
-      name: m.move.name.replace(/-/g, ' '),
-      url: m.move.url,
-      type: 'normal' // Default type, would need to fetch move details for actual type
-    }));
+
+    // 2) Guarantee at least one STAB move for primary type
+    if (!chosen.some((mv) => mv.type === primaryType)) {
+      addMove(this.getTypedMove(primaryType));
+    }
+
+    // 3) If dual-typed, try to include a move of the secondary type
+    if (secondaryType && !chosen.some((mv) => mv.type === secondaryType) && chosen.length < 4) {
+      addMove(this.getSecondaryTypedMove(secondaryType));
+    }
+
+    // 4) Fill remaining slots with offensive, unique moves from PokeAPI list
+    for (const m of shuffled) {
+      if (chosen.length >= 4) break;
+      const moveName = m.move?.name as string | undefined;
+      if (!moveName) continue;
+      const data = getMoveData(moveName);
+      if (data.power > 0) addMove(data.name);
+    }
+
+    // 5) Final fallback coverage pool (avoid duplicates and avoid two Scratches)
+    const fallbackPool = [
+      'Quick Attack',
+      'Tackle',
+      'Bite',
+      'Rock Throw',
+      'Confusion',
+      'Metal Claw',
+    ];
+    for (const f of fallbackPool) {
+      if (chosen.length >= 4) break;
+      addMove(f);
+    }
+
+    // Enforce STAB for known starters if still missing
+    const enforceStab = (type: string, moveName: string) => {
+      if (!chosen.some((mv) => mv.type === type)) {
+        addMove(moveName);
+      }
+    };
+
+    // Squirtle (id 7) must have Water Gun
+    if (this.playerPokemon.pokeId === 7) {
+      enforceStab('water', 'Water Gun');
+    }
+
+    // If chosen exceeds 4 after enforcement, drop lowest-priority generic moves
+    const dropOrder = ['Scratch', 'Tackle', 'Quick Attack', 'Bite'];
+    while (chosen.length > 4) {
+      const idx = chosen.findIndex((mv) => dropOrder.includes(mv.name));
+      if (idx >= 0) chosen.splice(idx, 1);
+      else chosen.pop();
+    }
+
+    // Prefer to show STAB first
+    const primaryIdx = chosen.findIndex((mv) => mv.type === primaryType);
+    if (primaryIdx > 0) {
+      const [mv] = chosen.splice(primaryIdx, 1);
+      chosen.unshift(mv);
+    }
+
+    // Trim to 4 just in case
+    return chosen.slice(0, 4);
   }
   
   private getTypedMove(type: string): string {
@@ -358,9 +443,33 @@ export class BattleScene extends Phaser.Scene {
       dark: 'Bite',
       steel: 'Metal Claw',
       fairy: 'Fairy Wind',
-      normal: 'Tackle'
+      normal: 'Scratch'
     };
-    return typeMoves[type] || 'Tackle';
+    return typeMoves[type] || 'Scratch';
+  }
+  
+  private getSecondaryTypedMove(type: string): string {
+    const secondaryMoves: Record<string, string> = {
+      fire: 'Flame Burst',
+      water: 'Bubble',
+      grass: 'Razor Leaf',
+      electric: 'Spark',
+      ice: 'Ice Shard',
+      fighting: 'Low Kick',
+      poison: 'Acid',
+      ground: 'Bulldoze',
+      flying: 'Wing Attack',
+      psychic: 'Psybeam',
+      bug: 'Fury Cutter',
+      rock: 'Rock Blast',
+      ghost: 'Shadow Sneak',
+      dragon: 'Twister',
+      dark: 'Feint Attack',
+      steel: 'Iron Defense',
+      fairy: 'Draining Kiss',
+      normal: 'Body Slam'
+    };
+    return secondaryMoves[type] || 'Body Slam';
   }
 
   private getMoveTypeColor(type: string): string {
@@ -394,20 +503,22 @@ export class BattleScene extends Phaser.Scene {
     
     // Get move data
     const moveData = getMoveData(move.name);
-    const playerAttack = this.getStatValue(this.playerPokemon.data, moveData.category === 'physical' ? 'attack' : 'special-attack');
-    const wildDefense = this.getStatValue(this.wildPokemon.data, moveData.category === 'physical' ? 'defense' : 'special-defense');
+const playerAttack = this.getStatValue(this.playerPokemon.data, moveData.category === 'physical' ? 'attack' : 'special-attack', this.playerPokemon.level);
+    const wildDefense = this.getStatValue(this.wildPokemon.data, moveData.category === 'physical' ? 'defense' : 'special-defense', this.wildLevel);
     
     // Get Pokemon types
     const wildTypes = (this.wildPokemon.data?.types || []).map((t: any) => t.type.name) as PokemonType[];
     
-    // Calculate damage with type effectiveness
+// Calculate damage with type effectiveness + STAB
+    const playerTypes = (this.playerPokemon.data?.types || []).map((t: any) => t.type.name) as PokemonType[];
     const damageResult = calculateDamage(
       this.playerPokemon.level,
       moveData.power,
       playerAttack,
       wildDefense,
       moveData.type as PokemonType,
-      wildTypes
+      wildTypes,
+      playerTypes
     );
     
     const damage = damageResult.damage;
@@ -447,6 +558,12 @@ export class BattleScene extends Phaser.Scene {
     if (this.battleInProgress) return;
     this.battleInProgress = true;
     
+    // Save current Pokemon's HP before switching
+    this.battleTeamHp.set(this.playerPokemon.pokeId, this.playerHp);
+    
+    // Get new Pokemon's current HP from battle tracking
+    const newCurrentHp = this.battleTeamHp.get(newPokemon.id) || newPokemon.maxHp;
+    
     // Update player Pokemon
     this.playerPokemon = {
       name: newPokemon.name,
@@ -454,11 +571,11 @@ export class BattleScene extends Phaser.Scene {
       data: newPokemon.data,
       spriteUrl: newPokemon.sprite,
       level: newPokemon.level || 1,
-      currentHp: newPokemon.currentHp || newPokemon.maxHp,
+      currentHp: newCurrentHp,
       maxHp: newPokemon.maxHp,
     };
     
-    this.playerHp = this.playerPokemon.currentHp;
+    this.playerHp = newCurrentHp;
     this.playerMaxHp = this.playerPokemon.maxHp;
     
     // Update sprite
@@ -477,8 +594,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private playerAttack() {
-    const playerAttack = this.getStatValue(this.playerPokemon.data, 'attack');
-    const wildDefense = this.getStatValue(this.wildPokemon.data, 'defense');
+const playerAttack = this.getStatValue(this.playerPokemon.data, 'attack', this.playerPokemon.level);
+    const wildDefense = this.getStatValue(this.wildPokemon.data, 'defense', this.wildLevel);
     
     const baseDamage = Math.max(1, playerAttack - wildDefense);
     const damage = Math.floor(baseDamage * (0.8 + Math.random() * 0.4)); // 0.8-1.2 multiplier
@@ -502,22 +619,29 @@ export class BattleScene extends Phaser.Scene {
     // Pick a random move type based on wild Pokemon's types
     const wildTypes = (this.wildPokemon.data?.types || []).map((t: any) => t.type.name);
     const attackType = (wildTypes[0] || 'normal') as PokemonType;
-    const movePower = 50; // Base move power for wild Pokemon
+const movePower = 35; // Base move power for wild Pokemon (toned down)
     
-    const wildAttack = this.getStatValue(this.wildPokemon.data, 'attack');
-    const playerDefense = this.getStatValue(this.playerPokemon.data, 'defense');
+const wildAttack = this.getStatValue(this.wildPokemon.data, 'attack', this.wildLevel);
+    const playerDefense = this.getStatValue(this.playerPokemon.data, 'defense', this.playerPokemon.level);
     
     // Get player Pokemon types
     const playerTypes = (this.playerPokemon.data?.types || []).map((t: any) => t.type.name) as PokemonType[];
     
-    // Calculate damage with type effectiveness
+// Squirtle defensive buff
+    const effectivePlayerDefense = (this.playerPokemon.pokeId === 7)
+      ? Math.floor(playerDefense * 1.25)
+      : playerDefense;
+
+    // Calculate damage with type effectiveness + STAB
+    const wildTypesForStab = (this.wildPokemon.data?.types || []).map((t: any) => t.type.name) as PokemonType[];
     const damageResult = calculateDamage(
       this.wildLevel,
       movePower,
       wildAttack,
-      playerDefense,
+      effectivePlayerDefense,
       attackType,
-      playerTypes
+      playerTypes,
+      wildTypesForStab
     );
     
     const damage = damageResult.damage;
@@ -577,8 +701,86 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
-  private async attemptCatch() {
-    const catchRate = this.wildHp < (this.wildMaxHp * 0.2) ? 0.8 : 0.3; // Higher rate if HP < 20%
+  private attemptCatch() {
+    // Only allow catching if wild Pokemon HP < 10%
+    const hpPercent = this.wildHp / this.wildMaxHp;
+    if (hpPercent >= 0.10) {
+      this.showToast(`The wild ${this.capitalize(this.wildPokemon.name)} is too strong to catch! Weaken it first (HP < 10%)`, 3000);
+      return;
+    }
+    
+    // Show Pokeball selection UI
+    this.showPokeballSelection();
+  }
+  
+  private showPokeballSelection() {
+    if (!this.isPlayerTurn || this.battleInProgress) return;
+    
+    // Hide main action buttons
+    if (this.actionButtons) this.actionButtons.setVisible(false);
+    
+    const { width, height } = this.scale;
+    
+    // Create Pokeball selection container
+    const pokeballContainer = this.add.container(0, 0);
+    
+    // Background
+    const panelW = 300; const panelH = 200;
+    const ballBg = this.add.rectangle(width / 2 - panelW / 2, height / 2 - panelH / 2, panelW, panelH, 0x222222, 0.95).setOrigin(0);
+    pokeballContainer.add(ballBg);
+    
+    const title = this.add.text(width / 2, height / 2 - panelH / 2 + 20, 'Choose Pokeball', {
+      fontSize: '18px',
+      color: '#fff',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    pokeballContainer.add(title);
+    
+    // Pokeball types with different catch rates
+    const pokeballs = [
+      { name: 'Poke Ball', catchBonus: 1.0, color: '#ff4444' },
+      { name: 'Great Ball', catchBonus: 1.5, color: '#4444ff' },
+      { name: 'Ultra Ball', catchBonus: 2.0, color: '#ffff00' },
+    ];
+    
+    pokeballs.forEach((ball, index) => {
+      const y = height / 2 - panelH / 2 + 60 + index * 40;
+      
+      const ballButton = this.add.text(width / 2 - 100, y, ball.name, {
+        fontSize: '16px',
+        color: '#fff',
+        backgroundColor: ball.color,
+        padding: { x: 15, y: 8 }
+      }).setOrigin(0).setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => {
+          pokeballContainer.destroy();
+          if (this.actionButtons) this.actionButtons.setVisible(true);
+          this.performCatch(ball.catchBonus);
+        });
+      
+      pokeballContainer.add(ballButton);
+    });
+    
+    // Back button
+    const backButton = this.add.text(width / 2, height / 2 + panelH / 2 - 20, 'BACK', {
+      fontSize: '14px',
+      color: '#fff',
+      backgroundColor: '#666',
+      padding: { x: 15, y: 8 }
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => {
+        pokeballContainer.destroy();
+        if (this.actionButtons) this.actionButtons.setVisible(true);
+      });
+    
+    pokeballContainer.add(backButton);
+    pokeballContainer.setDepth(1001);
+    this.battleUI?.add(pokeballContainer);
+  }
+  
+  private async performCatch(catchBonus: number = 1.0) {
+    const baseCatchRate = this.wildHp < (this.wildMaxHp * 0.2) ? 0.8 : 0.3; // Higher rate if HP < 20%
+    const catchRate = Math.min(0.95, baseCatchRate * catchBonus); // Cap at 95%
     
     if (Math.random() < catchRate) {
       this.updateBattleText(`Gotcha! ${this.capitalize(this.wildPokemon.name)} was caught!`);
@@ -586,23 +788,40 @@ export class BattleScene extends Phaser.Scene {
       // Mint NFT on blockchain
       await this.mintCaughtPokemonNFT();
 
-      // Save caught pokemon to trainer storage
+      // Save caught pokemon via battleResult endpoint
       try {
         const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
         if (wallet) {
-          const { saveTrainer } = await import('../../src/services/trainer');
           const caught = {
+            pokeId: this.wildPokemon.pokeId,
             name: this.wildPokemon.name,
             level: this.wildLevel,
             hp: this.wildMaxHp,
-            attack: this.getStatValue(this.wildPokemon.data, 'attack'),
-            defense: this.getStatValue(this.wildPokemon.data, 'defense'),
+attack: this.getStatValue(this.wildPokemon.data, 'attack', this.wildLevel),
+            defense: this.getStatValue(this.wildPokemon.data, 'defense', this.wildLevel),
             moves: (this.wildPokemon.data?.moves || []).slice(0, 4).map((m: any) => m.move?.name?.replace(/-/g, ' ')).filter(Boolean),
             rarity: this.determineRarity(this.wildPokemon.data),
+            image_url: this.wildPokemon.spriteUrl,
             caughtAt: new Date(),
           };
-          await saveTrainer({ walletAddress: wallet, storageAppend: [caught] });
-          // Add to local team cache so SWITCH can use it immediately
+          
+          // Sync with backend
+          await fetch('/api/trainer/battleResult', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-wallet-address': wallet },
+            body: JSON.stringify({
+              walletAddress: wallet,
+              outcome: 'caught',
+              xpGained: this.wildLevel * 5, // Also award XP for catching
+              caughtPokemon: caught,
+            })
+          });
+          
+          // Decrement pokeball
+          const { updateInventory } = await import('../../src/services/trainer');
+          await updateInventory({ walletAddress: wallet, inventoryDelta: { pokeballs: -1 } });
+          
+          // Add to local team cache
           this.playerTeam.push({
             id: this.wildPokemon.pokeId,
             name: this.wildPokemon.name,
@@ -610,10 +829,11 @@ export class BattleScene extends Phaser.Scene {
             sprite: this.wildPokemon.spriteUrl,
             level: this.wildLevel,
             maxHp: this.wildMaxHp,
-            currentHp: this.wildMaxHp,
           });
         }
-      } catch {}
+      } catch (error) {
+        console.error('Failed to save caught Pokemon:', error);
+      }
       
       this.time.delayedCall(2000, () => this.endBattle(true));
     } else {
@@ -794,33 +1014,79 @@ export class BattleScene extends Phaser.Scene {
     this.time.delayedCall(1000, () => this.wildAttack());
   }
 
-  private runAway() {
-    this.updateBattleText("You ran away safely!");
+  private async runAway() {
+    this.updateBattleText("You ran away! (5% XP penalty)");
+    
+    // Apply 5% XP penalty
+    try {
+      const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
+      if (wallet) {
+        const currentXP = parseInt(localStorage.getItem('trainer_exp') || '0');
+        const penalty = Math.floor(currentXP * 0.05);
+        const newXP = Math.max(0, currentXP - penalty);
+        
+        localStorage.setItem('trainer_exp', String(newXP));
+        
+        // Sync with backend
+        await fetch('/api/trainer/battleResult', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-wallet-address': wallet },
+          body: JSON.stringify({
+            walletAddress: wallet,
+            outcome: 'run',
+            xpGained: -penalty,
+          })
+        });
+        
+        window.dispatchEvent(new CustomEvent('trainer-xp-update', { detail: { newXP } }));
+      }
+    } catch {}
+    
     this.time.delayedCall(1500, () => this.endBattle(false));
   }
 
   private async wildDefeated() {
-    // Calculate EXP based on wild Pokemon level and base stats
-    const baseExp = this.wildPokemon.data?.base_experience || 50;
-    const expGained = 10 + (this.wildLevel * 2);
-    this.updateBattleText(`Wild ${this.capitalize(this.wildPokemon.name)} fainted! ${this.capitalize(this.playerPokemon.name)} gained ${expGained} EXP!`);
+    // Calculate EXP: enemyLevel * 5 (as per spec)
+    const expGained = this.wildLevel * 5;
+    this.updateBattleText(`Wild ${this.capitalize(this.wildPokemon.name)} fainted! Gained ${expGained} EXP!`);
 
-    // Update local cache and backend XP sync
+    // Update trainer XP and check for level up
     try {
       const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
       if (wallet) {
-        const cur = parseInt(localStorage.getItem('trainer_exp') || '0');
-        const newTotal = cur + expGained;
-        localStorage.setItem('trainer_exp', String(newTotal));
-        const { xpSync } = await import('../../src/services/trainer');
-        await xpSync({ walletAddress: wallet, newXP: newTotal });
-        window.dispatchEvent(new CustomEvent('trainer-xp-update', { detail: { newXP: newTotal } }));
+        const currentLevel = parseInt(localStorage.getItem('trainer_level') || '1');
+        
+        // Sync with backend using battleResult endpoint
+        const response = await fetch('/api/trainer/battleResult', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-wallet-address': wallet },
+          body: JSON.stringify({
+            walletAddress: wallet,
+            outcome: 'win',
+            xpGained: expGained,
+          })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const newLevel = data.trainer?.level || currentLevel;
+          const newXP = data.trainer?.xp || 0;
+          
+          localStorage.setItem('trainer_exp', String(newXP));
+          localStorage.setItem('trainer_level', String(newLevel));
+          
+          // Show level up animation if leveled up
+          if (data.leveledUp) {
+            this.time.delayedCall(1500, () => {
+              this.showLevelUpAnimation(newLevel);
+            });
+          }
+          
+          window.dispatchEvent(new CustomEvent('trainer-xp-update', { detail: { newXP, newLevel } }));
+        }
       }
-    } catch {}
-
-    // 25% auto-catch chance
-    if (Math.random() < 0.25) {
-      await this.attemptCatch();
+    } catch (error) {
+      console.error('Failed to sync XP:', error);
     }
 
     this.time.delayedCall(3000, () => this.endBattle(true));
@@ -832,8 +1098,9 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private endBattle(victory: boolean) {
-    // Return to GameScene
-    this.scene.start("GameScene");
+    // Stop BattleScene and resume GameScene
+    this.scene.stop();
+    this.scene.resume("GameScene");
   }
 
   private updateHpBars() {
@@ -855,7 +1122,20 @@ export class BattleScene extends Phaser.Scene {
   private updateBattleText(text: string) {
     if (!this.battleText) return;
     this.battleText.setText(text);
-   }
+    this.battleText.setVisible(true);
+    this.time.delayedCall(3000, () => {
+      if (this.battleText) this.battleText.setVisible(false);
+    });
+  }
+
+  private showToast(text: string, duration: number = 2000) {
+    if (!this.battleText) return;
+    this.battleText.setText(text);
+    this.battleText.setVisible(true);
+    this.time.delayedCall(duration, () => {
+      if (this.battleText) this.battleText.setVisible(false);
+    });
+  }
 
   private async loadTrainerTeam() {
     try {
@@ -865,22 +1145,104 @@ export class BattleScene extends Phaser.Scene {
       if (!res.ok) return;
       const data = await res.json();
       const trainer = data?.trainer;
-      const fromStorage = (trainer?.storage || []).slice(0, 6).map((p: any) => ({
-        id: p.pokeId || p.id || 0,
-        name: p.name,
-        data: this.wildPokemon?.data, // fallback; detailed per-mon data can be lazy-loaded later
-        sprite: p.image_url || this.playerPokemon.spriteUrl,
-        level: p.level || 1,
-        maxHp: p.hp || 50,
-        currentHp: p.hp || 50,
-      }));
-      if (fromStorage.length) this.playerTeam = fromStorage;
+      
+      // Load Pokemon with proper data from PokeAPI
+      const fromStorage = await Promise.all(
+        (trainer?.storage || []).slice(0, 6).map(async (p: any) => {
+          const pokeId = p.pokeId || p.id;
+          if (!pokeId) return null;
+          
+          // Fetch Pokemon data from PokeAPI
+          let pokemonData = null;
+          try {
+            const pokeRes = await fetch(`https://pokeapi.co/api/v2/pokemon/${pokeId}`);
+            if (pokeRes.ok) pokemonData = await pokeRes.json();
+          } catch {}
+          
+          return {
+            id: pokeId,
+            name: p.name,
+            data: pokemonData, // Full PokeAPI data for moves/types
+            sprite: p.image_url || pokemonData?.sprites?.back_default || this.playerPokemon.spriteUrl,
+            level: p.level || 1,
+            maxHp: p.hp || 50,
+          };
+        })
+      );
+      
+      const validTeam = fromStorage.filter((p): p is NonNullable<typeof p> => p !== null);
+      if (validTeam.length) this.playerTeam = validTeam;
     } catch {}
   }
 
-  private getStatValue(pokemonData: any, statName: string): number {
-    const stat = pokemonData?.stats?.find((s: any) => s.stat.name === statName);
-    return stat?.base_stat || 50;
+private getStatValue(pokemonData: any, statName: string, level: number = 1): number {
+    const base = pokemonData?.stats?.find((s: any) => s.stat.name === statName)?.base_stat;
+    const b = typeof base === 'number' ? base : 50;
+    // Include IV ~31 and scale by level: floor(((2*base + 31) * L) / 100) + 5
+    return Math.max(1, Math.floor(((2 * b + 31) * level) / 100) + 5);
+  }
+
+  private showLevelUpAnimation(newLevel: number) {
+    const { width, height } = this.scale;
+    
+    // Create level up overlay
+    const overlay = this.add.container(width / 2, height / 2);
+    
+    // Background
+    const bg = this.add.rectangle(0, 0, 400, 200, 0x000000, 0.85);
+    const border = this.add.rectangle(0, 0, 400, 200).setStrokeStyle(4, 0xffd700);
+    
+    // "Level Up!" text
+    const titleText = this.add.text(0, -50, '🎉 LEVEL UP! 🎉', {
+      fontSize: '32px',
+      color: '#ffd700',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    
+    // New level text
+    const levelText = this.add.text(0, 10, `Level ${newLevel}`, {
+      fontSize: '24px',
+      color: '#fff'
+    }).setOrigin(0.5);
+    
+    // Congratulations message
+    const congrats = this.add.text(0, 50, 'You are getting stronger!', {
+      fontSize: '16px',
+      color: '#aaa',
+      fontStyle: 'italic'
+    }).setOrigin(0.5);
+    
+    overlay.add([bg, border, titleText, levelText, congrats]);
+    overlay.setDepth(2000);
+    overlay.setAlpha(0);
+    
+    // Animate in
+    this.tweens.add({
+      targets: overlay,
+      alpha: 1,
+      scale: { from: 0.5, to: 1 },
+      duration: 500,
+      ease: 'Back.easeOut'
+    });
+    
+    // Pulse animation
+    this.tweens.add({
+      targets: titleText,
+      scale: { from: 1, to: 1.2 },
+      duration: 600,
+      yoyo: true,
+      repeat: 2
+    });
+    
+    // Auto dismiss after 3 seconds
+    this.time.delayedCall(3000, () => {
+      this.tweens.add({
+        targets: overlay,
+        alpha: 0,
+        duration: 300,
+        onComplete: () => overlay.destroy()
+      });
+    });
   }
 
   private capitalize(str: string): string {
