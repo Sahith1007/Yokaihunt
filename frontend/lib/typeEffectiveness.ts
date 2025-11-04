@@ -205,10 +205,10 @@ export function getEffectivenessText(multiplier: number): string | null {
 }
 
 /**
- * Calculate damage using Pokemon damage formula
- * damage = (((2 * level / 5 + 2) * power * (attack / defense)) / 50 + 2) * modifiers
+ * Calculate damage using simplified formula from spec:
+ * damage = (attack * movePower / defense) * typeMultiplier * randomFactor
  * 
- * @param level - Attacking Pokemon's level
+ * @param level - Attacking Pokemon's level (not used in simplified formula)
  * @param power - Move's power
  * @param attack - Attacking Pokemon's attack stat
  * @param defense - Defending Pokemon's defense stat
@@ -222,24 +222,28 @@ export function calculateDamage(
   attack: number,
   defense: number,
   attackType: PokemonType,
-  defenderTypes: PokemonType[]
+  defenderTypes: PokemonType[],
+  attackerTypes: PokemonType[] = []
 ): { damage: number; effectiveness: number; effectivenessText: string | null } {
-  // Base damage calculation
-  const levelFactor = (2 * level / 5 + 2);
-  const attackDefenseRatio = attack / Math.max(1, defense);
-  const baseDamage = (levelFactor * power * attackDefenseRatio) / 50 + 2;
-  
+  // Standard simplified Pokemon damage formula:
+  // base = (((2 * L / 5 + 2) * Power * Atk / Def) / 50) + 2
+  const levelFactor = Math.floor((2 * level) / 5) + 2;
+  const base = (((levelFactor * power * Math.max(1, attack)) / Math.max(1, defense)) / 50) + 2;
+
   // Type effectiveness
   const typeMultiplier = getTypeEffectiveness(attackType, defenderTypes);
-  
-  // Random factor (0.85 to 1.0)
+
+  // STAB (Same-Type Attack Bonus)
+  const stab = attackerTypes.includes(attackType) ? 1.5 : 1.0;
+
+  // Random factor (0.85 to 1.00)
   const randomFactor = 0.85 + Math.random() * 0.15;
-  
-  // Calculate final damage
-  const finalDamage = Math.floor(baseDamage * typeMultiplier * randomFactor);
-  
+
+  // Final damage
+  const finalDamage = Math.floor(base * typeMultiplier * stab * randomFactor);
+
   return {
-    damage: Math.max(1, finalDamage), // Minimum 1 damage
+    damage: Math.max(1, finalDamage),
     effectiveness: typeMultiplier,
     effectivenessText: getEffectivenessText(typeMultiplier),
   };

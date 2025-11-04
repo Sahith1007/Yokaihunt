@@ -56,6 +56,10 @@ export class GameScene extends Phaser.Scene {
   private others: Map<string, Phaser.GameObjects.Sprite> = new Map();
   private lastSent = 0;
 
+  // Nearby trainers (ghost avatars)
+  private ghosts: Map<string, { sprite: Phaser.GameObjects.Image; label?: Phaser.GameObjects.Text; username: string }> = new Map();
+  private nearbyTimer?: Phaser.Time.TimerEvent;
+
   // Spawns (managed by SpawnManager)
   private spawnManager?: SpawnManager;
 
@@ -276,6 +280,9 @@ export class GameScene extends Phaser.Scene {
     // Load trainer data if wallet connected
     this.initTrainerPersistence();
 
+    // Start nearby trainers polling/heartbeat every 10s
+    this.startNearbyPolling();
+
     // Autosave every ~2.5 minutes
     this.autosaveTimer = this.time.addEvent({ delay: 150000, loop: true, callback: () => this.autosave("interval") });
 
@@ -385,7 +392,19 @@ export class GameScene extends Phaser.Scene {
         // create initial snapshot
         await autosaveTrainer({ walletAddress: wallet, level: 1, xp: 0, location: { x: this.player.x, y: this.player.y, biome: 'grassland' } });
       }
+      
+      // Listen for XP updates from battle
+      if (typeof window !== 'undefined') {
+        window.addEventListener('trainer-xp-update', this.handleXPUpdate.bind(this));
+      }
     } catch {}
+  }
+  
+  private handleXPUpdate(event: any) {
+    const newXP = event.detail?.newXP || 0;
+    const level = this.configData.trainerLevel || 1;
+    const nextLevelXP = level * 100; // Simple formula: level * 100
+    this.updateHUD(level, newXP, nextLevelXP);
   }
 
   private async autosave(reason: string) {
@@ -414,6 +433,89 @@ export class GameScene extends Phaser.Scene {
       .setDepth(2000);
     this.toast = t;
     this.time.delayedCall(1600, () => { if (t.scene) t.destroy(); if (this.toast === t) this.toast = undefined; });
+  }
+
+  private getCurrentBiomeId(): string {
+    const cols = Math.max(1, Math.floor(this.mapWidthTiles / ZONE_TILES));
+    const rows = Math.max(1, Math.floor(this.mapHeightTiles / ZONE_TILES));
+    const zones = generateZones(cols, rows);
+    const cur = this.spawnManager?.getCurrentZone();
+    const meta = cur ? zones.find((q) => q.id === `${cur.col},${cur.row}`) : undefined;
+    return (meta?.biome || 'grassland') as string;
+  }
+
+  private startNearbyPolling() {
+    // Clear existing
+    this.nearbyTimer?.remove(false);
+    this.nearbyTimer = this.time.addEvent({ delay: 10000, loop: true, callback: async () => {
+      try {
+        const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
+        const username = typeof window !== 'undefined' ? (localStorage.getItem('trainer_username') || 'Trainer') : 'Trainer';
+        if (!wallet) return;
+        const biome = this.getCurrentBiomeId();
+        const tileX = Math.floor(this.player.x / this.tileSizePx);
+        const tileY = Math.floor(this.player.y / this.tileSizePx);
+        const svc = await import('../../src/services/trainer');
+        // upsert presence
+        await svc.updateActivePosition({ walletAddress: wallet, x: tileX, y: tileY, biome });
+        // fetch nearby
+        const data = await svc.fetchNearby({ walletAddress: wallet, x: tileX, y: tileY, biome }).catch(() => null);
+        const list = data?.trainers || [];
+        this.renderGhosts(list);
+      } catch {}
+    }});
+
+    // first immediate tick
+    this.time.delayedCall(500, () => this.nearbyTimer?.callback?.());
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.nearbyTimer?.remove(false);
+      this.ghosts.forEach((g) => { g.sprite.destroy(); g.label?.destroy(); });
+      this.ghosts.clear();
+    });
+  }
+
+  private renderGhosts(list: { walletAddress: string; username: string; x: number; y: number }[]) {
+    const wanted = new Set(list.map((t) => t.walletAddress.toLowerCase()));
+    // remove stale
+    Array.from(this.ghosts.keys()).forEach((k) => { if (!wanted.has(k.toLowerCase())) { const g = this.ghosts.get(k)!; g.sprite.destroy(); g.label?.destroy(); this.ghosts.delete(k); } });
+    // upsert
+    list.forEach((t) => {
+      const id = t.walletAddress;
+      const wx = (t.x || 0) * this.tileSizePx + this.tileSizePx / 2;
+      const wy = (t.y || 0) * this.tileSizePx + this.tileSizePx / 2;
+      let g = this.ghosts.get(id);
+      if (!g) {
+        const s = this.add.image(wx, wy, 'player').setTint(0xffffff).setAlpha(0.5).setDepth(8);
+        s.setScale(0.9);
+        s.setInteractive({ useHandCursor: true });
+        const showTip = () => {
+          if (g?.label) g.label.destroy();
+          g!.label = this.add.text(s.x, s.y - 18, t.username || 'Trainer', { fontSize: '10px', color: '#fff', backgroundColor: '#00000088', padding: { x: 4, y: 2 } }).setOrigin(0.5).setDepth(1001);
+        };
+        s.on('pointerover', showTip);
+        s.on('pointerout', () => { g?.label?.destroy(); g!.label = undefined; });
+        s.on('pointerdown', () => this.promptChallenge(t.username || 'Trainer'));
+        g = { sprite: s, username: t.username || 'Trainer' };
+        this.ghosts.set(id, g);
+      }
+      // move/update
+      g.sprite.x = wx; g.sprite.y = wy; g.username = t.username || g.username;
+      if (g.label) { g.label.x = wx; g.label.y = wy - 18; g.label.setText(g.username); }
+    });
+  }
+
+  private promptChallenge(name: string) {
+    const { width, height } = this.scale;
+    const modal = this.add.container(width / 2, height / 2).setDepth(2001);
+    const bg = this.add.rectangle(0, 0, 300, 160, 0x000000, 0.85);
+    const border = this.add.rectangle(0, 0, 300, 160).setStrokeStyle(2, 0xffffff);
+    const txt = this.add.text(0, -30, `Challenge ${name}?`, { fontSize: '16px', color: '#fff' }).setOrigin(0.5);
+    const ok = this.add.text(-40, 30, 'Challenge', { fontSize: '14px', color: '#0f0', backgroundColor: '#222', padding: { x: 10, y: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const cancel = this.add.text(60, 30, 'Cancel', { fontSize: '14px', color: '#fff', backgroundColor: '#444', padding: { x: 10, y: 6 } }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    ok.on('pointerdown', () => { this.showSavedToast(`You challenged ${name}! (mock)`); modal.destroy(); });
+    cancel.on('pointerdown', () => modal.destroy());
+    modal.add([bg, border, txt, ok, cancel]);
   }
 
   // ---- Multiplayer (kept) ----
@@ -584,9 +686,22 @@ export class GameScene extends Phaser.Scene {
       // Transform player Pokemon to match BattleScene expected format
       const playerPoke = this.configData.playerPokemon;
       const hpStat = playerPoke.data?.stats?.find((s: any) => s.stat.name === 'hp')?.base_stat || 50;
-      const maxHp = Math.floor(hpStat * 1.5 * (playerPoke.level || 1));
+      const level = playerPoke.level || 1;
+// Use proper Pokemon HP formula with IV ~31: ((2*Base + 31) * Level / 100) + Level + 10
+      const maxHp = Math.max(28, Math.floor(((hpStat * 2 + 31) * level) / 100 + level + 10));
       
-      this.scene.start('BattleScene', {
+      // Build player team (at minimum includes the current Pokemon)
+      const playerTeam = [{
+        id: playerPoke.id,
+        name: playerPoke.name || playerPoke.displayName,
+        data: playerPoke.data,
+        sprite: playerPoke.sprite,
+        level: playerPoke.level || 1,
+        maxHp: maxHp,
+      }];
+      
+      this.scene.pause(); // Pause GameScene instead of stopping it
+      this.scene.launch('BattleScene', {
         wildPokemon: {
           name: rec.name,
           pokeId: rec.pokeId,
@@ -603,6 +718,7 @@ export class GameScene extends Phaser.Scene {
           maxHp: maxHp,
           currentHp: maxHp,
         },
+        playerTeam: playerTeam,
         trainerLevel: this.configData.trainerLevel || 1,
       });
     } catch {}
