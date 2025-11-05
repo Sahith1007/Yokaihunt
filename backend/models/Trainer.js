@@ -2,9 +2,10 @@ import mongoose from "mongoose";
 
 const PokemonSubSchema = new mongoose.Schema(
   {
+    pokeId: { type: Number, required: true }, // Pokemon ID from PokeAPI
     name: { type: String, required: true },
     level: { type: Number, default: 1 },
-    hp: { type: Number, default: 10 },
+    hp: { type: Number, default: 10 }, // Max HP - always restored to full between battles
     attack: { type: Number, default: 5 },
     defense: { type: Number, default: 5 },
     moves: { type: [String], default: [] },
@@ -40,6 +41,7 @@ const TrainerSchema = new mongoose.Schema(
       biome: { type: String, default: "grassland" },
     },
     ipfsBackupHash: { type: String },
+    lastBackupCID: { type: String, default: "" },
     timestamp: { type: Date, default: Date.now },
   },
   { timestamps: true }
