@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
 
 interface SidebarProps {
@@ -68,6 +68,10 @@ export default function Sidebar({ spotted, nearby, balls, playerPokemon, selecte
             {tab === "player" && (
               <div className="space-y-3">
                 <div>
+                  <div className="text-xs uppercase tracking-wider opacity-70 mb-1">Profile Backup</div>
+                  <BackupRestorePanel />
+                </div>
+                <div>
                   <div className="text-xs uppercase tracking-wider opacity-70 mb-1">Bag</div>
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div className="bg-white/5 rounded p-2">Pokéball: {balls.pokeball}</div>
@@ -104,6 +108,72 @@ export default function Sidebar({ spotted, nearby, balls, playerPokemon, selecte
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function BackupRestorePanel() {
+  const [status, setStatus] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [wallet, setWallet] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setWallet(localStorage.getItem('algorand_wallet_address'));
+    }
+  }, []);
+
+  const backend = (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000').replace(/\/$/, '');
+
+  async function backup() {
+    if (!wallet) return;
+    setBusy(true); setStatus('Backing up to IPFS...');
+    try {
+      const res = await fetch(`${backend}/api/trainer/backup`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-wallet-address': wallet },
+        body: JSON.stringify({ walletAddress: wallet })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Backup failed');
+      setStatus(`Backup successful (CID: ${data.cid || data.ipfsHash})`);
+    } catch (e: any) {
+      setStatus(`Backup failed: ${e?.message || e}`);
+    } finally { setBusy(false); }
+  }
+
+  async function restore() {
+    if (!wallet) return;
+    setBusy(true); setStatus('Restoring from IPFS...');
+    try {
+      const res = await fetch(`${backend}/api/trainer/restore/${encodeURIComponent(wallet)}`, {
+        headers: { 'x-wallet-address': wallet }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Restore failed');
+      // Persist minimal state client-side
+      try { localStorage.setItem('trainer_level', String(data?.trainer?.level || 1)); } catch {}
+      window.dispatchEvent(new CustomEvent('trainer-xp-update', { detail: { newXP: data?.trainer?.xp || 0 } }));
+      setStatus('Restore complete');
+    } catch (e: any) {
+      setStatus(`Restore failed: ${e?.message || e}`);
+    } finally { setBusy(false); }
+  }
+
+  const disabled = !wallet || busy;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <button disabled={disabled} onClick={backup} className={`px-2 py-1 text-xs rounded ${disabled ? 'bg-white/10' : 'bg-green-600 hover:bg-green-500'}`}>Backup to IPFS</button>
+        <button disabled={disabled} onClick={restore} className={`px-2 py-1 text-xs rounded ${disabled ? 'bg-white/10' : 'bg-blue-600 hover:bg-blue-500'}`}>Restore from IPFS</button>
+      </div>
+      {wallet ? (
+        <div className="text-[11px] opacity-70">Wallet: {wallet.slice(0,6)}…{wallet.slice(-4)}</div>
+      ) : (
+        <div className="text-[11px] opacity-70">Connect wallet to enable backup/restore</div>
+      )}
+      {status && <div className="text-[11px]">{status}</div>}
     </div>
   );
 }
