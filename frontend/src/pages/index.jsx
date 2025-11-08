@@ -6,6 +6,9 @@ import InventoryModal from "../../components/Modals/InventoryModal";
 import TeamModal from "../../components/Modals/TeamModal";
 import StarterSelection from "../../components/StarterSelection";
 import { hasStarterPokemon, loadStarterPokemon } from "../../lib/pokeapi";
+import { HUD } from "../../ui/HUD";
+import { LogModal } from "../../ui/LogModal";
+import { CaptureModal } from "../../ui/CaptureModal";
 
 const Game = dynamic(() => import("../../components/Game"), { ssr: false });
 
@@ -21,6 +24,20 @@ export default function Home() {
   const [showStarterSelection, setShowStarterSelection] = useState(false);
   const [starterPokemon, setStarterPokemon] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [captureState, setCaptureState] = useState({ 
+    open: false, 
+    outcome: null, 
+    txId: null, 
+    txIdMint: null,
+    txIdSend: null,
+    assetId: null,
+    ipfs: null, 
+    spawn: null, 
+    xpGained: null,
+    optInRequired: false
+  });
 
   // Check for starter on mount (only once)
   useEffect(() => {
@@ -34,6 +51,38 @@ export default function Home() {
       setIsInitialized(true);
     }
   }, [isInitialized]);
+
+  // Listen for spawn proximity and capture results from GameScene
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const proximityHandler = (e) => {
+      const d = e.detail || {};
+      if (d.spawn) {
+        setCaptureState({ open: true, outcome: null, txId: null, spawn: d.spawn });
+      }
+    };
+    const resultHandler = (e) => {
+      const d = e.detail || {};
+      setCaptureState(prev => ({ 
+        ...prev, 
+        outcome: d.outcome || null, 
+        txId: d.txId || null,
+        txIdMint: d.txIdMint || null,
+        txIdSend: d.txIdSend || null,
+        assetId: d.assetId || null,
+        ipfs: d.ipfs || null,
+        xpGained: d.xpGained || null,
+        optInRequired: d.optInRequired || false,
+        pokemon: d.pokemon || prev.spawn
+      }));
+    };
+    window.addEventListener('yokai-spawn-proximity', proximityHandler);
+    window.addEventListener('yokai-capture-result', resultHandler);
+    return () => {
+      window.removeEventListener('yokai-spawn-proximity', proximityHandler);
+      window.removeEventListener('yokai-capture-result', resultHandler);
+    };
+  }, []);
 
   // Load player data (only once)
   useEffect(() => {
@@ -122,11 +171,43 @@ export default function Home() {
         </aside>
       </div>
 
+      <HUD onInventory={() => setShowInventory(true)} onChat={() => setChatOpen(!chatOpen)} onLog={() => setLogOpen(true)} />
+
       <InventoryModal open={showInventory} onClose={() => setShowInventory(false)} />
       <TeamModal 
         open={showTeam} 
         team={starterPokemon ? [starterPokemon, ...playerPokemon].slice(0, 6) : playerPokemon.slice(0, 6)} 
         onClose={() => setShowTeam(false)} 
+      />
+      <LogModal open={logOpen} onClose={() => setLogOpen(false)} wallet={(typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null)} />
+      <CaptureModal 
+        open={captureState.open} 
+        outcome={captureState.outcome} 
+        txId={captureState.txId}
+        txIdMint={captureState.txIdMint}
+        txIdSend={captureState.txIdSend}
+        assetId={captureState.assetId}
+        ipfs={captureState.ipfs}
+        pokemon={captureState.spawn}
+        xpGained={captureState.xpGained}
+        optInRequired={captureState.optInRequired}
+        onClose={() => setCaptureState({ 
+          open: false, 
+          outcome: null, 
+          txId: null, 
+          txIdMint: null,
+          txIdSend: null,
+          assetId: null,
+          ipfs: null, 
+          spawn: null, 
+          xpGained: null,
+          optInRequired: false
+        })}
+        onCapture={async (spawn) => {
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('yokai-capture-attempt', { detail: { spawn } }));
+          }
+        }}
       />
     </div>
   );

@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import http from "http";
 import "./db.js";
 import pokemonRoutes from "./routes/pokemon.js";
 
@@ -34,9 +35,45 @@ import nftRoutes from "./routes/nft2.js";
 app.use("/api", nftRoutes);
 import battleRoutes from "./routes/battle.js";
 app.use("/api", battleRoutes);
+import spawnRoutes from "./routes/spawn.js";
+app.use("/api", spawnRoutes);
+import txRoutes from "./routes/tx.js";
+app.use("/api", txRoutes);
+import captureRoutes from "./routes/capture.js";
+app.use("/api", captureRoutes);
+import playerRoutes from "./routes/player.js";
+app.use("/api", playerRoutes);
+import pokemonRoutes from "./routes/pokemon.js";
+app.use("/api", pokemonRoutes);
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
+// Create HTTP server wrapper
+const server = http.createServer(app);
+
+// Initialize Socket.io
+try {
+  const initSocket = (await import('./socket/index.js')).default;
+  initSocket(server);
+  console.log('🔌 Socket.io initialized');
+} catch (e) {
+  console.warn('Socket.io not initialized:', e?.message || e);
+}
 
 // Start server
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`✅ Backend running on port ${PORT}`);
   console.log(`🏥 Health check: http://localhost:${PORT}/health`);
   console.log(`🎮 API endpoints: http://localhost:${PORT}/api`);

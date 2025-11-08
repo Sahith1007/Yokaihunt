@@ -4,6 +4,11 @@ import { catchPokemon as apiCatch } from "../api/api";
 import { SpawnManager } from "../spawnUtils";
 import { ZONE_TILES, generateZones } from "../mapZones";
 import { BIOMES, type BiomeId, type StructureDef, type StructureType } from "../biomes";
+import { UIManager } from "./managers/UIManager";
+import MultiplayerHandler from "./managers/MultiplayerHandler";
+import OtherPlayers from "./renderers/OtherPlayers";
+import { TransactionManager } from "./managers/TransactionManager";
+import { XPManager, type XPUpdateEvent } from "./managers/XPManager";
 
 function capitalize(s: string) {
   return (s || "").charAt(0).toUpperCase() + (s || "").slice(1);
@@ -54,6 +59,7 @@ export class GameScene extends Phaser.Scene {
   private mapHeightTiles = 0;
   private tileSizePx = 32;
   private others: Map<string, Phaser.GameObjects.Sprite> = new Map();
+  private otherPositions: Map<string, { x: number; y: number; targetX: number; targetY: number; lastUpdate: number }> = new Map();
   private lastSent = 0;
 
   // Nearby trainers (ghost avatars)
@@ -78,10 +84,32 @@ export class GameScene extends Phaser.Scene {
 // Toast notification
   private toast?: Phaser.GameObjects.Text;
   private autosaveTimer?: Phaser.Time.TimerEvent;
+
+  // Floating text animations
+  private floatingTexts: Phaser.GameObjects.Text[] = [];
+
+  // Multiplayer players (from MultiplayerHandler)
+  private multiplayerPlayers: Map<string, { sprite: Phaser.GameObjects.Sprite; label?: Phaser.GameObjects.Text; data: any; targetX: number; targetY: number }> = new Map();
+  private onlineCount = 0;
+  private hudOnlineText?: Phaser.GameObjects.Text;
+
+  // XP Manager
+  private xpManager?: XPManager;
+
+  // Phase 2 managers
+  private ui?: UIManager;
+  private mp?: MultiplayerHandler;
+  private otherPlayers?: OtherPlayers;
+
+  // HUD elements
   private hud?: Phaser.GameObjects.Container;
-  private hudText?: Phaser.GameObjects.Text;
   private hudBarBg?: Phaser.GameObjects.Rectangle;
   private hudBarFg?: Phaser.GameObjects.Rectangle;
+  private hudText?: Phaser.GameObjects.Text;
+
+  // Backend spawns
+  private backendSpawns: Map<string, { sprite: Phaser.GameObjects.Image; data: any; glowCircle?: Phaser.GameObjects.Arc; pulseTween?: Phaser.Tweens.Tween }> = new Map();
+  private spawnPoll?: Phaser.Time.TimerEvent;
 
   // Structures
   private structures: StructureDef[] = [];
@@ -237,6 +265,58 @@ export class GameScene extends Phaser.Scene {
     // Environment overlay
     this.envOverlay = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0xffffff, 0.08).setOrigin(0).setScrollFactor(0).setDepth(900);
 
+    // Phase 2 managers
+    this.ui = new UIManager(this as unknown as Phaser.Scene);
+    
+    // Initialize simpler multiplayer system
+    this.mp = new MultiplayerHandler();
+    this.otherPlayers = new OtherPlayers(this);
+    
+    // Join game with initial position
+    const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
+    if (wallet) {
+      this.mp.joinGame(wallet, startX, startY, "default");
+    }
+    
+    // Subscribe to player updates
+    this.mp.onPlayersUpdate((players) => {
+      this.otherPlayers?.updatePlayers(players);
+    });
+    
+    // Initialize XP Manager with current XP from trainer data
+    const initialXP = typeof window !== 'undefined' ? parseInt(localStorage.getItem('trainer_exp') || '0', 10) : 0;
+    this.xpManager = new XPManager(initialXP);
+    
+    // Listen for XP updates
+    XPManager.onXPUpdate((event: XPUpdateEvent) => {
+      this.handleXPUpdate(event);
+    });
+
+    // Hook TransactionManager to wallet events
+    if (typeof window !== 'undefined') {
+      // Listen for transaction confirmations from wallet
+      const txHandler = async (e: any) => {
+        const tx = e.detail;
+        if (tx?.txId) {
+          const wallet = localStorage.getItem('algorand_wallet_address');
+          if (wallet) {
+            await TransactionManager.logTransaction({
+              wallet,
+              txId: tx.txId,
+              type: tx.type || 'TRANSACTION',
+              asset: tx.asset || 'Yokai',
+              meta: tx.meta
+            });
+            this.ui?.toastTop('Transaction confirmed');
+          }
+        }
+      };
+      window.addEventListener('yokai-transaction-logged', txHandler);
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+        window.removeEventListener('yokai-transaction-logged', txHandler);
+      });
+    }
+
     // Minimap overlay (no grid lines)
     this.createMiniMap();
 
@@ -277,11 +357,41 @@ export class GameScene extends Phaser.Scene {
     this.generateStructures();
     this.spawnManager.start();
 
+    // Backend spawn polling
+    const jitter = Phaser.Math.Between(20000, 40000);
+    this.spawnPoll = this.time.addEvent({ delay: jitter, loop: true, callback: () => this.pollBackendSpawns() });
+    // Kick first poll after a short delay
+    this.time.delayedCall(1500, () => this.pollBackendSpawns());
+
     // Load trainer data if wallet connected
     this.initTrainerPersistence();
 
     // Start nearby trainers polling/heartbeat every 10s
     this.startNearbyPolling();
+
+    // Listen for capture attempts from React overlay
+    if (typeof window !== 'undefined') {
+      const captureHandler = (e: any) => {
+        const spawn = e.detail?.spawn;
+        if (spawn) {
+          this.performCapture(spawn);
+        }
+      };
+      window.addEventListener('yokai-capture-attempt', captureHandler);
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+        window.removeEventListener('yokai-capture-attempt', captureHandler);
+      });
+      
+      // Listen for zone spawns from socket
+      const zoneSpawnsHandler = (e: any) => {
+        const spawns = e.detail?.spawns || [];
+        this.handleZoneSpawns(spawns);
+      };
+      window.addEventListener('yokai-zone-spawns', zoneSpawnsHandler);
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+        window.removeEventListener('yokai-zone-spawns', zoneSpawnsHandler);
+      });
+    }
 
     // Autosave every ~2.5 minutes
     this.autosaveTimer = this.time.addEvent({ delay: 150000, loop: true, callback: () => this.autosave("interval") });
@@ -331,9 +441,40 @@ export class GameScene extends Phaser.Scene {
       this.socket.emit("move", { x: this.player.x, y: this.player.y });
       this.lastSent = now;
     }
+    
+    // Send position via simpler multiplayer handler
+    try {
+      const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
+      if (wallet && this.mp) {
+        const body = this.player.body as Phaser.Physics.Arcade.Body;
+        const dir = Math.atan2(body.velocity.y, body.velocity.x) * (180 / Math.PI);
+        this.mp.sendPosition(
+          wallet,
+          this.player.x,
+          this.player.y,
+          this.getCurrentBiomeId() || "default",
+          dir
+        );
+      }
+    } catch {}
+
+    // Interpolate other players' positions (legacy socket.io)
+    const INTERP_SPEED = 0.15; // Lerp factor (0-1)
+    this.otherPositions.forEach((pos, id) => {
+      const sprite = this.others.get(id);
+      if (sprite) {
+        // Smooth interpolation toward target
+        pos.x = Phaser.Math.Linear(pos.x, pos.targetX, INTERP_SPEED);
+        pos.y = Phaser.Math.Linear(pos.y, pos.targetY, INTERP_SPEED);
+        sprite.setPosition(pos.x, pos.y);
+      }
+    });
 
     // Update zone tracking for spawns/minimap
     this.spawnManager?.updatePlayerPos(this.player.x, this.player.y);
+    
+    // Check spawn proximity every frame
+    this.checkSpawnProximity();
 
     // Battle when near and Enter pressed (compat)
     if (this.enterKey && Phaser.Input.Keyboard.JustDown(this.enterKey)) {
@@ -361,14 +502,29 @@ export class GameScene extends Phaser.Scene {
     this.hudBarBg = this.add.rectangle(10, 8, w - 20, h, 0x333333, 1).setOrigin(0);
     this.hudBarFg = this.add.rectangle(10, 8, 0, h, 0x2ecc71, 1).setOrigin(0);
     this.hudText = this.add.text(12, -8, 'Lv.1 0/100 XP', { fontSize: '12px', color: '#fff' });
-    this.hud.add([bg, this.hudBarBg, this.hudBarFg, this.hudText!]);
+    // Online players counter
+    this.hudOnlineText = this.add.text(w + 20, -8, '0 Trainers Online', { fontSize: '11px', color: '#aaa' });
+    this.hud.add([bg, this.hudBarBg, this.hudBarFg, this.hudText!, this.hudOnlineText!]);
   }
 
   private updateHUD(level: number, currentXP: number, nextLevelXP: number) {
     const w = (this.hudBarBg?.width || 200);
     const pct = Math.max(0, Math.min(1, (nextLevelXP ? currentXP / nextLevelXP : 0)));
-    if (this.hudBarFg) this.hudBarFg.width = Math.floor(w * pct);
-    if (this.hudText) this.hudText.setText(`Lv.${level} ${currentXP}/${nextLevelXP} XP`);
+    
+    // Smooth animated progress bar
+    if (this.hudBarFg) {
+      const targetWidth = Math.floor(w * pct);
+      this.tweens.add({
+        targets: this.hudBarFg,
+        width: targetWidth,
+        duration: 500,
+        ease: 'Power2'
+      });
+    }
+    
+    if (this.hudText) {
+      this.hudText.setText(`Lv.${level} ${currentXP}/${nextLevelXP} XP`);
+    }
   }
 
   private async initTrainerPersistence() {
@@ -387,6 +543,12 @@ export class GameScene extends Phaser.Scene {
         }
         if (typeof t.level === 'number') this.configData.trainerLevel = t.level;
         this.updateHUD(t.level || 1, t.currentXP || 0, t.nextLevelXP || 100);
+        
+        // Initialize XPManager with loaded XP
+        if (this.xpManager && t.xp !== undefined) {
+          this.xpManager.setXP(t.xp);
+        }
+        
         this.showSavedToast('Trainer data loaded successfully!');
       } else {
         // create initial snapshot
@@ -395,16 +557,77 @@ export class GameScene extends Phaser.Scene {
       
       // Listen for XP updates from battle
       if (typeof window !== 'undefined') {
-        window.addEventListener('trainer-xp-update', this.handleXPUpdate.bind(this));
+        const handler = (e: Event) => {
+          const customEvent = e as CustomEvent<XPUpdateEvent>;
+          if (customEvent.detail) {
+            this.handleXPUpdate(customEvent.detail);
+          }
+        };
+        window.addEventListener('trainer-xp-update', handler);
+        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+          window.removeEventListener('trainer-xp-update', handler);
+        });
       }
     } catch {}
   }
   
-  private handleXPUpdate(event: any) {
-    const newXP = event.detail?.newXP || 0;
-    const level = this.configData.trainerLevel || 1;
-    const nextLevelXP = level * 100; // Simple formula: level * 100
-    this.updateHUD(level, newXP, nextLevelXP);
+  private handleXPUpdate(event: XPUpdateEvent) {
+    // Update HUD
+    this.updateHUD(event.newLevel, event.currentXP, event.nextLevelXP);
+    
+    // Persist XP
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('trainer_exp', event.newXP.toString());
+    }
+    
+    // Update config
+    this.configData.trainerLevel = event.newLevel;
+    
+    // Show floating XP animation
+    this.showFloatingXP(this.player.x, this.player.y - 20, `+${event.xpGained} XP`);
+    
+    // Handle level up
+    if (event.leveledUp) {
+      this.ui?.toastTop(`🎉 Level Up! You reached Level ${event.newLevel}!`);
+      this.showFloatingXP(this.player.x, this.player.y - 40, 'LEVEL UP!', 0xffff00);
+      this.playLevelUpEffect();
+      
+      // Broadcast level up event
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('yokai-level-up', { detail: event }));
+      }
+    }
+    
+    // Broadcast XP update event
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('yokai-xp-update', { detail: event }));
+    }
+  }
+
+  private playLevelUpEffect() {
+    // Particle burst effect around player
+    const particles = this.add.particles(this.player.x, this.player.y, 'player', {
+      speed: { min: 50, max: 150 },
+      scale: { start: 0.3, end: 0 },
+      lifespan: 600,
+      quantity: 20,
+      tint: [0xffff00, 0xffd700, 0xffa500]
+    });
+    
+    this.time.delayedCall(600, () => {
+      particles.destroy();
+    });
+    
+    // Flash effect
+    const flash = this.add.rectangle(this.player.x, this.player.y, 100, 100, 0xffff00, 0.3);
+    flash.setDepth(3001);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      scale: 2,
+      duration: 500,
+      onComplete: () => flash.destroy()
+    });
   }
 
   private async autosave(reason: string) {
@@ -424,6 +647,285 @@ export class GameScene extends Phaser.Scene {
         await enqueueSave({ url: base, method: 'POST', headers: { 'Content-Type': 'application/json', ...(wallet ? { 'x-wallet-address': wallet } : {}) }, body: { walletAddress: wallet, level: this.configData.trainerLevel || 1, location: { x: this.player.x, y: this.player.y } } });
       } catch {}
     }
+  }
+
+  private async pollBackendSpawns() {
+    try {
+      const biome = this.getCurrentBiomeId();
+      const lvl = this.configData.trainerLevel || 1;
+      // Simple zone calculation fallback (10x10 tiles per zone)
+      const zoneCol = Math.floor(this.player.x / (this.tileSizePx * 10));
+      const zoneRow = Math.floor(this.player.y / (this.tileSizePx * 10));
+      const zoneId = `zone_${zoneCol}_${zoneRow}`;
+      
+      // Poll spawns for current zone
+      const url = `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'}/api/spawn/sync?biome=${encodeURIComponent(biome)}&level=${lvl}&players=1&zoneId=${encodeURIComponent(zoneId)}&x=${Math.floor(this.player.x)}&y=${Math.floor(this.player.y)}`;
+      const res = await fetch(url, { cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      const list = data.spawns || [];
+      // Add new spawns
+      list.forEach((s: any) => {
+        if (this.backendSpawns.has(s.id)) {
+          // Update existing spawn position if changed
+          const existing = this.backendSpawns.get(s.id);
+          if (existing && (existing.data.x !== s.x || existing.data.y !== s.y)) {
+            existing.sprite.setPosition(s.x, s.y);
+            existing.data = s;
+          }
+          return;
+        }
+        const sprite = this.add.image(s.x, s.y, `pk-${s.pokeId}`).setVisible(false).setDepth(18).setInteractive({ useHandCursor: true });
+        if (!this.textures.exists(`pk-${s.pokeId}`)) {
+          this.load.image(`pk-${s.pokeId}`, `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${s.pokeId}.png`);
+          this.load.once(Phaser.Loader.Events.COMPLETE, () => sprite.setTexture(`pk-${s.pokeId}`));
+          this.load.start();
+        }
+        // Glowing spawn circle (pulsing animation)
+        const glowCircle = this.add.circle(s.x, s.y, 24, 0xffff66, 0.4).setDepth(17);
+        const pulseTween = this.tweens.add({
+          targets: glowCircle,
+          radius: { from: 20, to: 32 },
+          alpha: { from: 0.3, to: 0.6 },
+          duration: 1200,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut'
+        });
+        // Spawn circle animation on first appearance
+        const circle = this.add.circle(s.x, s.y, 6, 0xffff66, 0.6).setDepth(17);
+        this.tweens.add({ targets: circle, radius: 26, alpha: 0, duration: 600, onComplete: () => circle.destroy() });
+        // Click to attempt capture if near
+        sprite.on('pointerdown', () => this.tryCaptureBackendSpawn(s));
+        sprite.setVisible(true);
+        this.backendSpawns.set(s.id, { sprite, data: s, glowCircle, pulseTween });
+      });
+      // Cleanup expired or missing (only for current zone)
+      const cleanupZoneCol = Math.floor(this.player.x / (this.tileSizePx * 10));
+      const cleanupZoneRow = Math.floor(this.player.y / (this.tileSizePx * 10));
+      const currentZone = `zone_${cleanupZoneCol}_${cleanupZoneRow}`;
+      for (const [id, rec] of this.backendSpawns.entries()) {
+        // Remove if not in list OR if zone changed
+        const inList = list.find((q: any) => q.id === id);
+        const wrongZone = currentZone && rec.data.zoneId && rec.data.zoneId !== currentZone;
+        if (!inList || wrongZone) {
+          rec.sprite.destroy();
+          if (rec.glowCircle) rec.glowCircle.destroy();
+          if (rec.pulseTween) rec.pulseTween.destroy();
+          this.backendSpawns.delete(id);
+        }
+      }
+      // Check proximity for auto-opening CaptureModal
+      this.checkSpawnProximity();
+      if (list.length) this.ui?.toastTop('Pokémon nearby');
+    } catch {}
+  }
+
+  private checkSpawnProximity() {
+    const PROXIMITY_THRESHOLD = this.tileSizePx * 2.5; // ~80px
+    Array.from(this.backendSpawns.values()).forEach((rec) => {
+      const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, rec.data.x, rec.data.y);
+      if (dist <= PROXIMITY_THRESHOLD && !rec.data.proximityTriggered) {
+        rec.data.proximityTriggered = true;
+        // Open CaptureModal via React overlay
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('yokai-spawn-proximity', {
+            detail: {
+              spawn: {
+                id: rec.data.id,
+                name: rec.data.name,
+                pokeId: rec.data.pokeId,
+                level: rec.data.level,
+                rarity: rec.data.rarity,
+                x: rec.data.x,
+                y: rec.data.y
+              }
+            }
+          }));
+        }
+      } else if (dist > PROXIMITY_THRESHOLD) {
+        rec.data.proximityTriggered = false;
+      }
+    });
+  }
+
+  private async tryCaptureBackendSpawn(spawn: any) {
+    try {
+      const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, spawn.x, spawn.y);
+      if (d > this.tileSizePx * 2.5) {
+        this.ui?.toastTop('Move closer to catch');
+        return;
+      }
+      const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
+      if (!wallet) {
+        this.ui?.toastTop('Connect wallet to catch');
+        return;
+      }
+      // Open CaptureModal via React overlay
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('yokai-spawn-proximity', {
+          detail: {
+            spawn: {
+              id: spawn.id,
+              name: spawn.name,
+              pokeId: spawn.pokeId,
+              level: spawn.level,
+              rarity: spawn.rarity,
+              x: spawn.x,
+              y: spawn.y
+            }
+          }
+        }));
+      }
+    } catch {}
+  }
+
+  async performCapture(spawn: any): Promise<void> {
+    try {
+      const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
+      if (!wallet) {
+        this.ui?.toastTop('Connect wallet to catch');
+        return;
+      }
+
+      // Convert sprite URL to base64
+      const spriteUrl = spawn.sprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${spawn.pokeId}.png`;
+      let imageBase64 = '';
+      
+      try {
+        const imgResp = await fetch(spriteUrl);
+        const blob = await imgResp.blob();
+        const reader = new FileReader();
+        imageBase64 = await new Promise((resolve, reject) => {
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } catch (e) {
+        console.error('Failed to convert image to base64:', e);
+        this.ui?.toastTop('Failed to process image');
+        return;
+      }
+
+      // Call new /api/pokemon/caught endpoint
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000'}/api/pokemon/caught`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-wallet-address': wallet },
+        body: JSON.stringify({
+          wallet,
+          name: spawn.name,
+          imageBase64,
+          rarity: spawn.rarity || 'common'
+        })
+      });
+      const js = await resp.json().catch(() => ({}));
+      if (js.success) {
+        // Calculate XP gained (5 for attempt + 25 for success = 30 total)
+        const xpGained = 30;
+        
+        // Use XPManager to add XP
+        if (this.xpManager) {
+          const xpEvent = this.xpManager.addXP(xpGained);
+          // XPManager will trigger handleXPUpdate via listener
+        } else {
+          // Fallback if XPManager not initialized
+          const oldLevel = this.configData.trainerLevel || 1;
+          const oldXP = typeof window !== 'undefined' ? parseInt(localStorage.getItem('trainer_exp') || '0', 10) : 0;
+          const newXP = oldXP + xpGained;
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('trainer_exp', newXP.toString());
+          }
+          const levelData = XPManager.levelFromXP(newXP);
+          this.updateHUD(levelData.level, levelData.currentXP, levelData.nextLevelXP);
+          this.configData.trainerLevel = levelData.level;
+          this.showFloatingXP(this.player.x, this.player.y - 20, `+${xpGained} XP`);
+          if (levelData.level > oldLevel) {
+            this.ui?.toastTop('Level up!');
+            this.showFloatingXP(this.player.x, this.player.y - 40, 'LEVEL UP!', 0xffff00);
+          }
+        }
+        
+        this.ui?.toastTop('Capture success!');
+        
+        // Remove spawn from map
+        const rec = this.backendSpawns.get(spawn.id);
+        if (rec) {
+          rec.sprite.destroy();
+          if (rec.glowCircle) rec.glowCircle.destroy();
+          if (rec.pulseTween) rec.pulseTween.destroy();
+          this.backendSpawns.delete(spawn.id);
+        }
+        
+        // Broadcast capture success event
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('yokai-capture-result', {
+            detail: { 
+              outcome: js.optInRequired ? 'optInRequired' : 'success', 
+              txId: js.txIdSend || js.txIdMint, 
+              txIdMint: js.txIdMint,
+              txIdSend: js.txIdSend,
+              assetId: js.assetId,
+              ipfs: js.metadataCID,
+              pokemon: spawn,
+              xpGained: xpGained,
+              optInRequired: js.optInRequired || false
+            }
+          }));
+        }
+        
+        // Log tx for 📜 Log
+        if (js.txId) {
+          await TransactionManager.logCapture({ wallet, txId: js.txId, meta: { pokeId: spawn.pokeId, name: spawn.name } });
+        }
+        
+        // Log XP transaction
+        if (this.xpManager) {
+          const levelData = this.xpManager.getLevelData();
+          await TransactionManager.logTransaction({
+            wallet,
+            txId: js.txId || `XP-${Date.now()}`,
+            type: 'XP_GAIN',
+            asset: 'XP',
+            meta: { xpGained, level: levelData.level, currentXP: levelData.currentXP }
+          });
+        }
+      } else {
+        // Failed capture - still gain attempt XP
+        const attemptXP = 5;
+        if (this.xpManager) {
+          this.xpManager.addXP(attemptXP);
+        }
+        
+        this.ui?.toastTop('Pokémon escaped! You still gained +5 XP.');
+        
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('yokai-capture-result', { 
+            detail: { outcome: 'fail', xpGained: attemptXP } 
+          }));
+        }
+      }
+    } catch (e) {
+      this.ui?.toastTop('Capture failed');
+    }
+  }
+
+  private showFloatingXP(x: number, y: number, text: string, color: number = 0x2ecc71) {
+    const txt = this.add.text(x, y, text, {
+      fontSize: '18px',
+      color: `#${color.toString(16).padStart(6, '0')}`,
+      stroke: '#000000',
+      strokeThickness: 3,
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(3000);
+    
+    // Animate floating up and fading out
+    this.tweens.add({
+      targets: txt,
+      y: y - 40,
+      alpha: 0,
+      duration: 1200,
+      ease: 'Power2',
+      onComplete: () => txt.destroy()
+    });
   }
 
   private showSavedToast(text: string) {
@@ -555,8 +1057,17 @@ export class GameScene extends Phaser.Scene {
       ({ id, x, y }: { id: string; x: number; y: number }) => {
         const sprite = this.others.get(id);
         if (sprite) {
-          sprite.x = x;
-          sprite.y = y;
+          // Update interpolation target
+          const pos = this.otherPositions.get(id);
+          if (pos) {
+            pos.targetX = x;
+            pos.targetY = y;
+            pos.lastUpdate = this.time.now;
+          } else {
+            // Initialize position tracking
+            this.otherPositions.set(id, { x, y, targetX: x, targetY: y, lastUpdate: this.time.now });
+            sprite.setPosition(x, y);
+          }
         }
       },
     );
@@ -567,6 +1078,7 @@ export class GameScene extends Phaser.Scene {
         sprite.destroy();
         this.others.delete(id);
       }
+      this.otherPositions.delete(id);
     });
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -576,6 +1088,17 @@ export class GameScene extends Phaser.Scene {
       this.myId = undefined;
       this.others.forEach((s) => s.destroy());
       this.others.clear();
+      this.otherPositions.clear();
+      
+      // Cleanup multiplayer players
+      this.multiplayerPlayers.forEach((player) => {
+        player.sprite.destroy();
+        if (player.label) player.label.destroy();
+      });
+      this.multiplayerPlayers.clear();
+      
+      // Disconnect MultiplayerHandler
+      this.mp?.disconnect();
     });
   }
 
@@ -583,6 +1106,8 @@ export class GameScene extends Phaser.Scene {
     const s = this.add.sprite(x, y, "player").setTint(0x118ab2);
     s.setDepth(5);
     this.others.set(id, s);
+    // Initialize position tracking for interpolation
+    this.otherPositions.set(id, { x, y, targetX: x, targetY: y, lastUpdate: this.time.now });
   }
 
   // ---- Minimap ----
@@ -811,6 +1336,133 @@ export class GameScene extends Phaser.Scene {
         this.envOverlay!.setFillStyle(hex, 0.08);
       }});
     }
+  }
+
+  // ---- Multiplayer rendering ----
+
+  private onMultiplayerPlayerJoin(player: any) {
+    const wallet = player.wallet;
+    const myWallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
+    if (wallet === myWallet) return; // Don't render self
+    
+    // Check if player is nearby (within reasonable distance)
+    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, player.x, player.y);
+    if (dist > this.tileSizePx * 20) return; // Too far, don't show
+    
+    // Create sprite (smaller than player)
+    const sprite = this.add.sprite(player.x, player.y, 'player');
+    sprite.setTint(0x4a90e2); // Blue tint for other players
+    sprite.setScale(0.75); // Smaller than player
+    sprite.setDepth(9);
+    
+    // Create label above sprite
+    const name = player.name || player.wallet.slice(0, 6);
+    const label = this.add.text(player.x, player.y - 20, name, {
+      fontSize: '10px',
+      color: '#fff',
+      backgroundColor: '#00000088',
+      padding: { x: 4, y: 2 }
+    }).setOrigin(0.5).setDepth(1000);
+    
+    this.multiplayerPlayers.set(wallet, {
+      sprite,
+      label,
+      data: player,
+      targetX: player.x,
+      targetY: player.y
+    });
+    
+    // Toast notification
+    this.ui?.toastTop(`${name} entered your area`);
+  }
+
+  private onMultiplayerPlayerLeave(wallet: string) {
+    const player = this.multiplayerPlayers.get(wallet);
+    if (!player) return;
+    
+    const name = player.data.name || wallet.slice(0, 6);
+    
+    // Fade out and destroy
+    this.tweens.add({
+      targets: [player.sprite, player.label],
+      alpha: 0,
+      duration: 500,
+      onComplete: () => {
+        player.sprite.destroy();
+        if (player.label) player.label.destroy();
+        this.multiplayerPlayers.delete(wallet);
+      }
+    });
+    
+    // Toast notification
+    this.ui?.toastTop(`${name} left your area`);
+  }
+
+  private updateOnlineCounter() {
+    if (this.hudOnlineText) {
+      const count = this.onlineCount;
+      this.hudOnlineText.setText(`${count} Trainer${count !== 1 ? 's' : ''} Online`);
+    }
+  }
+
+  private updateMultiplayerPlayers() {
+    // This method is kept for compatibility but the simpler system uses OtherPlayers renderer
+    // The OtherPlayers renderer handles player updates via onPlayersUpdate callback
+    // No-op: player rendering is handled by OtherPlayers class
+  }
+
+  private onZoneChanged(oldZone: string | null, newZone: string) {
+    // Clear spawns from old zone
+    if (oldZone) {
+      // Remove spawns that don't belong to new zone
+      for (const [id, rec] of this.backendSpawns.entries()) {
+        if (rec.data.zoneId && rec.data.zoneId !== newZone) {
+          rec.sprite.destroy();
+          if (rec.glowCircle) rec.glowCircle.destroy();
+          if (rec.pulseTween) rec.pulseTween.destroy();
+          this.backendSpawns.delete(id);
+        }
+      }
+      this.ui?.toastTop(`Entered zone ${newZone}`);
+    }
+    
+    // Request spawns for new zone
+    this.pollBackendSpawns();
+  }
+
+  private handleZoneSpawns(spawns: any[]) {
+    // Update spawns from socket broadcast
+    const spawnZoneCol = Math.floor(this.player.x / (this.tileSizePx * 10));
+    const spawnZoneRow = Math.floor(this.player.y / (this.tileSizePx * 10));
+    const currentZone = `zone_${spawnZoneCol}_${spawnZoneRow}`;
+    if (!currentZone) return;
+    
+    spawns.forEach((s: any) => {
+      if (s.zoneId !== currentZone) return; // Only process spawns for current zone
+      
+      if (!this.backendSpawns.has(s.id)) {
+        // Add new spawn
+        const sprite = this.add.image(s.x, s.y, `pk-${s.pokeId}`).setVisible(false).setDepth(18).setInteractive({ useHandCursor: true });
+        if (!this.textures.exists(`pk-${s.pokeId}`)) {
+          this.load.image(`pk-${s.pokeId}`, `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${s.pokeId}.png`);
+          this.load.once(Phaser.Loader.Events.COMPLETE, () => sprite.setTexture(`pk-${s.pokeId}`));
+          this.load.start();
+        }
+        const glowCircle = this.add.circle(s.x, s.y, 24, 0xffff66, 0.4).setDepth(17);
+        const pulseTween = this.tweens.add({
+          targets: glowCircle,
+          radius: { from: 20, to: 32 },
+          alpha: { from: 0.3, to: 0.6 },
+          duration: 1200,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut'
+        });
+        sprite.on('pointerdown', () => this.tryCaptureBackendSpawn(s));
+        sprite.setVisible(true);
+        this.backendSpawns.set(s.id, { sprite, data: s, glowCircle, pulseTween });
+      }
+    });
   }
 
   private pushSpawnsToUI() {

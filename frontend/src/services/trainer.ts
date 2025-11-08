@@ -66,3 +66,21 @@ export async function backupTrainer(walletAddress: string) {
   if (!res.ok) throw new Error(`Backup failed ${res.status}`);
   return res.json();
 }
+
+export async function updateActivePosition(payload: { walletAddress: string; x: number; y: number; biome: string }) {
+  const res = await fetch(`${API}/multiplayer/presence`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...walletHeader(payload.walletAddress) },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error(`Update position failed ${res.status}`);
+  return res.json();
+}
+
+export async function fetchNearby(payload: { walletAddress: string; x: number; y: number; biome: string }) {
+  const res = await fetch(`${API}/trainer/nearby?x=${payload.x}&y=${payload.y}&biome=${encodeURIComponent(payload.biome)}`, {
+    headers: { ...walletHeader(payload.walletAddress) }
+  });
+  if (!res.ok) throw new Error(`Fetch nearby failed ${res.status}`);
+  return res.json();
+}

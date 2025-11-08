@@ -1,309 +1,366 @@
-import express from "express";
-import { isMongoConnected } from "../db.js";
-import Pokemon from "../models/Pokemon.js";
-import Player from "../models/Player.js";
-import Market from "../models/Market.js";
+// backend/routes/pokemon.js
+// Pokémon routes - NFT minting with separate opt-in/transfer flow
 
-// Middleware to check database connection
-const requireDatabase = (req, res, next) => {
-  if (!isMongoConnected()) {
-    return res.status(503).json({ 
-      error: "Database not available", 
-      message: "Please configure MongoDB Atlas. See SETUP.md for instructions." 
-    });
-  }
-  next();
-};
+import express from 'express';
+import algosdk from 'algosdk';
+import { uploadImageFromBase64, uploadJSON } from '../services/pinata.js';
+import { getClient, getIndexer, getCreatorAccount, confirmTx } from '../services/algorand.js';
+import Pokemon from '../models/Pokemon.js';
+import TxLog from '../models/TxLog.js';
 
 const router = express.Router();
 
-// 👤 Get current player (by token)
-router.get("/player", async (req, res) => {
+/**
+ * POST /api/pokemon/caught
+ * Mint NFT for caught Pokémon
+ */
+router.post('/pokemon/caught', async (req, res) => {
   try {
-    // For now, return dummy player data since auth isn't implemented
-    const mockPlayer = {
-      username: "TestPlayer",
-      progress: {
-        posX: 64,
-        posY: 64
-      }
-    };
-    
-    res.json(mockPlayer);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to get player" });
-  }
-});
+    const { wallet, name, imageBase64, rarity } = req.body;
+    const walletAddress = wallet || req.headers['x-wallet-address'];
 
-// 👤 Create new player
-router.post("/player", requireDatabase, async (req, res) => {
-  try {
-    const { username, walletAddress } = req.body;
-    
-    // Check if player already exists
-    const existingPlayer = await Player.findOne({ 
-      $or: [{ username }, { walletAddress }] 
-    });
-    
-    if (existingPlayer) {
-      return res.status(400).json({ error: "Player already exists" });
+    if (!walletAddress || !name || !imageBase64 || !rarity) {
+      return res.status(400).json({ 
+        error: 'wallet, name, imageBase64, and rarity are required' 
+      });
     }
 
-    const newPlayer = new Player({ username, walletAddress });
-    await newPlayer.save();
-    
-    res.json({ success: true, player: newPlayer });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to create player" });
-  }
-});
+    // Step 1: Upload image to Pinata
+    const imageCid = await uploadImageFromBase64(imageBase64, `${name}-${Date.now()}.png`);
 
-// 👤 Get player by ID
-router.get("/player/:playerId", requireDatabase, async (req, res) => {
-  try {
-    const { playerId } = req.params;
-    const player = await Player.findById(playerId).populate('pokedex');
-    
-    if (!player) {
-      return res.status(404).json({ error: "Player not found" });
-    }
-    
-    res.json({ player });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to get player" });
-  }
-});
-
-// 🐾 Spawn random Pokémon (No database required)
-router.get("/spawn", async (req, res) => {
-  try {
-    const id = Math.floor(Math.random() * 898) + 1;
-    const response = await fetch(`https://pokeapi.co/api/v2/pokemon/${id}`);
-    const data = await response.json();
-
-    res.json({
-      name: data.name,
-      stats: data.stats.map(s => ({ name: s.stat.name, value: s.base_stat })),
-      sprite: data.sprites.front_default,
-      types: data.types.map(t => t.type.name),
-    });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to spawn Pokémon" });
-  }
-});
-
-// 🎯 Catch Pokémon
-router.post("/catch", requireDatabase, async (req, res) => {
-  try {
-    const { playerId, name, stats, types } = req.body;
-    const catchChance = Math.random();
-    
-    if (catchChance < 0.6) {
-      return res.status(400).json({ success: false, message: "Pokémon escaped!" });
-    }
-
-    // Convert stats array to object
-    const baseStats = {};
-    stats.forEach(stat => {
-      baseStats[stat.name.replace('-', '')] = stat.value;
-    });
-
-    const newPokemon = new Pokemon({ 
-      name, 
-      baseStats, 
-      level: 1, 
-      owner: playerId,
-      isLegendary: false,
-      isMythical: false
-    });
-    await newPokemon.save();
-
-    await Player.findByIdAndUpdate(playerId, { $push: { pokedex: newPokemon._id } });
-
-    res.json({ success: true, message: `${name} caught!`, pokemon: newPokemon });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to catch Pokémon" });
-  }
-});
-
-// 🐾 Get player Pokemon (by token)
-router.get("/pokemon", requireDatabase, async (req, res) => {
-  try {
-    // For now, return dummy starter Pokemon since auth isn't implemented
-    const mockPokemon = [
-      {
-        id: "starter1",
-        name: "pikachu",
-        pokeId: 25,
-        level: 5,
-        currentHp: 35,
-        maxHp: 35,
-        stats: [
-          { name: "hp", value: 35 },
-          { name: "attack", value: 55 },
-          { name: "defense", value: 40 },
-          { name: "speed", value: 90 }
-        ],
-        types: ["electric"]
-      }
-    ];
-    
-    res.json({ pokemon: mockPokemon });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to get pokemon" });
-  }
-});
-
-// 📦 Get player inventory (by token)
-router.get("/inventory", requireDatabase, async (req, res) => {
-  try {
-    // For now, return dummy data since auth isn't implemented
-    const mockInventory = {
-      balls: {
-        pokeball: 10,
-        greatball: 5,
-        ultraball: 3,
-        masterball: 1
-      }
-    };
-    
-    res.json(mockInventory);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to get inventory" });
-  }
-});
-
-// 📦 Get player inventory by ID
-router.get("/inventory/:playerId", requireDatabase, async (req, res) => {
-  try {
-    const { playerId } = req.params;
-    const player = await Player.findById(playerId).populate('pokedex');
-    
-    if (!player) {
-      return res.status(404).json({ error: "Player not found" });
-    }
-
-    res.json({ inventory: player.pokedex });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to get inventory" });
-  }
-});
-
-// ⚡ Evolve Pokémon
-router.post("/evolve", requireDatabase, async (req, res) => {
-  try {
-    const { playerId, pokemonIds } = req.body;
-    
-    if (!pokemonIds || pokemonIds.length < 2) {
-      return res.status(400).json({ error: "Need at least 2 Pokémon to evolve" });
-    }
-
-    // Get the Pokémon to evolve
-    const pokemon = await Pokemon.find({ _id: { $in: pokemonIds }, owner: playerId });
-    
-    if (pokemon.length !== pokemonIds.length) {
-      return res.status(400).json({ error: "Invalid Pokémon or not owned by player" });
-    }
-
-    // Simple evolution logic - combine stats and increase level
-    const evolvedStats = {
-      hp: Math.floor(pokemon.reduce((sum, p) => sum + p.baseStats.hp, 0) / pokemon.length * 1.2),
-      attack: Math.floor(pokemon.reduce((sum, p) => sum + p.baseStats.attack, 0) / pokemon.length * 1.2),
-      defense: Math.floor(pokemon.reduce((sum, p) => sum + p.baseStats.defense, 0) / pokemon.length * 1.2),
-      speed: Math.floor(pokemon.reduce((sum, p) => sum + p.baseStats.speed, 0) / pokemon.length * 1.2),
-      yield: 100 // Evolved Pokémon have yield
+    // Step 2: Create metadata (static, no XP/level)
+    const metadata = {
+      name: name,
+      description: 'A Yokai creature',
+      image: `ipfs://${imageCid}`,
+      attributes: [
+        { trait_type: 'rarity', value: rarity }
+      ]
     };
 
-    const evolvedPokemon = new Pokemon({
-      name: `Evolved ${pokemon[0].name}`,
-      level: Math.max(...pokemon.map(p => p.level)) + 1,
-      baseStats: evolvedStats,
-      owner: playerId,
-      isLegendary: false,
-      isMythical: false
+    // Step 3: Upload metadata to Pinata
+    const metadataCid = await uploadJSON(metadata);
+
+    // Step 4: Mint NFT ASA
+    const algod = getClient();
+    const creator = getCreatorAccount();
+    const suggestedParams = await algod.getTransactionParams().do();
+
+    const txn = algosdk.makeAssetCreateTxnWithSuggestedParamsFromObject({
+      from: creator.addr,
+      total: 1,
+      decimals: 0,
+      defaultFrozen: false,
+      unitName: 'YOKAI',
+      assetName: name,
+      assetURL: `ipfs://${metadataCid}`,
+      note: new TextEncoder().encode(JSON.stringify({ 
+        standard: 'arc3',
+        metadataCid 
+      })),
+      suggestedParams,
     });
 
-    await evolvedPokemon.save();
+    const signed = txn.signTxn(creator.sk);
+    const { txId } = await algod.sendRawTransaction(signed).do();
+    
+    // Wait for confirmation
+    const confirmed = await confirmTx(txId);
+    const assetId = confirmed['asset-index'] || confirmed['created-asset-index'];
+    
+    if (!assetId) {
+      throw new Error('Failed to extract asset ID from transaction');
+    }
 
-    // Remove the original Pokémon
-    await Pokemon.deleteMany({ _id: { $in: pokemonIds } });
-    await Player.findByIdAndUpdate(playerId, { 
-      $pull: { pokedex: { $in: pokemonIds } },
-      $push: { pokedex: evolvedPokemon._id }
+    // Step 5: Save Pokémon in DB (level: 1, xp: 0)
+    const pokemon = await Pokemon.create({
+      ownerWallet: walletAddress,
+      name,
+      imageCid,
+      metadataCid,
+      assetId,
+      rarity,
+      level: 1,
+      xp: 0
     });
 
-    res.json({ success: true, pokemon: evolvedPokemon });
+    // Log transaction
+    await TxLog.create({
+      walletAddress,
+      txId,
+      type: 'MINT',
+      asset: 'Yokai',
+      meta: { assetId, name, rarity }
+    });
+
+    return res.json({
+      success: true,
+      assetId,
+      txId,
+      metadataCid,
+      pokemonId: pokemon._id
+    });
+
   } catch (error) {
-    res.status(500).json({ error: "Failed to evolve Pokémon" });
+    console.error('Pokémon caught error:', error);
+    return res.status(500).json({ 
+      error: 'Failed to mint Pokémon NFT', 
+      details: error.message 
+    });
   }
 });
 
-// 🛍️ List Pokémon for sale
-router.post("/sell", requireDatabase, async (req, res) => {
+/**
+ * POST /api/pokemon/optin
+ * Return unsigned opt-in transaction
+ */
+router.post('/pokemon/optin', async (req, res) => {
   try {
-    const { playerId, pokemonId, price } = req.body;
+    const { assetId } = req.body;
+    const walletAddress = req.headers['x-wallet-address'] || req.body.wallet;
+
+    if (!assetId || !walletAddress) {
+      return res.status(400).json({ 
+        error: 'assetId and wallet are required' 
+      });
+    }
+
+    const algod = getClient();
+    const suggestedParams = await algod.getTransactionParams().do();
+
+    // Create unsigned opt-in transaction (transfer 0 to self)
+    const txn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+      from: walletAddress,
+      to: walletAddress,
+      amount: 0,
+      assetIndex: Number(assetId),
+      suggestedParams,
+    });
+
+    // Encode transaction for signing
+    const txnBytes = algosdk.encodeUnsignedTransaction(txn);
+    const txnBase64 = Buffer.from(txnBytes).toString('base64');
+
+    return res.json({
+      unsignedTxn: txnBase64,
+      assetId: Number(assetId)
+    });
+
+  } catch (error) {
+    console.error('Opt-in transaction creation error:', error);
+    return res.status(500).json({ 
+      error: 'Failed to create opt-in transaction', 
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * POST /api/pokemon/optin/submit
+ * Submit signed opt-in transaction
+ */
+router.post('/pokemon/optin/submit', async (req, res) => {
+  try {
+    const { signedTxn } = req.body;
+    const walletAddress = req.headers['x-wallet-address'] || req.body.wallet;
+
+    if (!signedTxn || !walletAddress) {
+      return res.status(400).json({ 
+        error: 'signedTxn and wallet are required' 
+      });
+    }
+
+    const algod = getClient();
     
-    const pokemon = await Pokemon.findOne({ _id: pokemonId, owner: playerId });
+    // Decode signed transaction
+    const txnBytes = Buffer.from(signedTxn, 'base64');
+    const decodedTxn = algosdk.decodeSignedTransaction(txnBytes);
+
+    // Verify it's an opt-in (amount 0, from === to)
+    if (decodedTxn.txn.amount !== 0 || 
+        algosdk.encodeAddress(decodedTxn.txn.from.publicKey) !== 
+        algosdk.encodeAddress(decodedTxn.txn.to.publicKey)) {
+      return res.status(400).json({ 
+        error: 'Invalid opt-in transaction' 
+      });
+    }
+
+    // Submit transaction
+    const { txId } = await algod.sendRawTransaction(txnBytes).do();
+    
+    // Wait for confirmation
+    await confirmTx(txId);
+
+    // Log transaction
+    await TxLog.create({
+      walletAddress,
+      txId,
+      type: 'OPT_IN',
+      asset: 'Yokai',
+      meta: { assetId: decodedTxn.txn.assetIndex }
+    });
+
+    return res.json({
+      success: true,
+      txId
+    });
+
+  } catch (error) {
+    console.error('Opt-in submission error:', error);
+    return res.status(500).json({ 
+      error: 'Failed to submit opt-in transaction', 
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * POST /api/pokemon/transfer
+ * Transfer NFT from creator to player (after opt-in)
+ */
+router.post('/pokemon/transfer', async (req, res) => {
+  try {
+    const { assetId } = req.body;
+    const walletAddress = req.headers['x-wallet-address'] || req.body.wallet;
+
+    if (!assetId || !walletAddress) {
+      return res.status(400).json({ 
+        error: 'assetId and wallet are required' 
+      });
+    }
+
+    // Verify player has opted in
+    const indexer = getIndexer();
+    try {
+      const accountInfo = await indexer.lookupAccountByID(walletAddress).do();
+      const hasAsset = accountInfo.account?.assets?.some(
+        (asset) => asset['asset-id'] === Number(assetId)
+      );
+      
+      if (!hasAsset) {
+        return res.status(400).json({ 
+          error: 'Player must opt-in before transfer' 
+        });
+      }
+    } catch (e) {
+      return res.status(400).json({ 
+        error: 'Failed to verify opt-in status' 
+      });
+    }
+
+    // Transfer NFT from creator to player
+    const algod = getClient();
+    const creator = getCreatorAccount();
+    const suggestedParams = await algod.getTransactionParams().do();
+
+    const txn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
+      from: creator.addr,
+      to: walletAddress,
+      amount: 1,
+      assetIndex: Number(assetId),
+      suggestedParams,
+    });
+
+    const signed = txn.signTxn(creator.sk);
+    const { txId } = await algod.sendRawTransaction(signed).do();
+    
+    // Wait for confirmation
+    await confirmTx(txId);
+
+    // Update Pokémon owner in DB
+    await Pokemon.findOneAndUpdate(
+      { assetId: Number(assetId) },
+      { ownerWallet: walletAddress }
+    );
+
+    // Log transaction
+    await TxLog.create({
+      walletAddress,
+      txId,
+      type: 'TRANSFER',
+      asset: 'Yokai',
+      meta: { assetId: Number(assetId) }
+    });
+
+    return res.json({
+      success: true,
+      txId
+    });
+
+  } catch (error) {
+    console.error('Transfer error:', error);
+    return res.status(500).json({ 
+      error: 'Failed to transfer NFT', 
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * GET /api/pokemon/:id
+ * Get Pokémon data including XP/Level (from DB, not NFT)
+ */
+router.get('/pokemon/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const pokemon = await Pokemon.findById(id).lean();
+
     if (!pokemon) {
-      return res.status(404).json({ error: "Pokémon not found or not owned" });
+      return res.status(404).json({ error: 'Pokémon not found' });
     }
 
-    const listing = new Market({
-      pokemon: pokemonId,
-      seller: playerId,
-      price
+    return res.json({
+      id: pokemon._id,
+      name: pokemon.name,
+      assetId: pokemon.assetId,
+      rarity: pokemon.rarity,
+      level: pokemon.level,
+      xp: pokemon.xp,
+      imageCid: pokemon.imageCid,
+      metadataCid: pokemon.metadataCid,
+      ownerWallet: pokemon.ownerWallet,
+      createdAt: pokemon.createdAt
     });
 
-    await listing.save();
-    res.json({ success: true, listing });
   } catch (error) {
-    res.status(500).json({ error: "Failed to list Pokémon" });
+    console.error('Get Pokémon error:', error);
+    return res.status(500).json({ 
+      error: 'Failed to fetch Pokémon', 
+      details: error.message 
+    });
   }
 });
 
-// 🏦 Get marketplace listings
-router.get("/marketplace", requireDatabase, async (req, res) => {
+/**
+ * GET /api/pokemon/owner/:wallet
+ * Get all Pokémon owned by wallet
+ */
+router.get('/pokemon/owner/:wallet', async (req, res) => {
   try {
-    const listings = await Market.find({ isSold: false })
-      .populate('pokemon')
-      .populate('seller', 'username');
-    
-    res.json({ listings });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to get marketplace" });
-  }
-});
+    const { wallet } = req.params;
+    const pokemon = await Pokemon.find({ ownerWallet: wallet })
+      .sort({ createdAt: -1 })
+      .lean();
 
-// 💰 Buy Pokémon from marketplace
-router.post("/buy", requireDatabase, async (req, res) => {
-  try {
-    const { buyerId, listingId } = req.body;
-    
-    const listing = await Market.findOne({ _id: listingId, isSold: false })
-      .populate('pokemon');
-    
-    if (!listing) {
-      return res.status(404).json({ error: "Listing not found or already sold" });
-    }
-
-    // Update ownership
-    await Pokemon.findByIdAndUpdate(listing.pokemon._id, { owner: buyerId });
-    
-    // Update player inventories
-    await Player.findByIdAndUpdate(listing.seller, { 
-      $pull: { pokedex: listing.pokemon._id }
-    });
-    await Player.findByIdAndUpdate(buyerId, { 
-      $push: { pokedex: listing.pokemon._id }
+    return res.json({
+      pokemon: pokemon.map(p => ({
+        id: p._id,
+        name: p.name,
+        assetId: p.assetId,
+        rarity: p.rarity,
+        level: p.level,
+        xp: p.xp,
+        imageCid: p.imageCid,
+        createdAt: p.createdAt
+      }))
     });
 
-    // Mark as sold
-    listing.isSold = true;
-    await listing.save();
-
-    res.json({ success: true, pokemon: listing.pokemon });
   } catch (error) {
-    res.status(500).json({ error: "Failed to buy Pokémon" });
+    console.error('Get owner Pokémon error:', error);
+    return res.status(500).json({ 
+      error: 'Failed to fetch Pokémon', 
+      details: error.message 
+    });
   }
 });
 

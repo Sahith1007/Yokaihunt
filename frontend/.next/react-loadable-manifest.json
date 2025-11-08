@@ -35,6 +35,10 @@
       "static/chunks/_pages-dir-browser_src_services_trainer_ts.js"
     ]
   },
+  "..\\ui\\CaptureModal.tsx -> ../src/services/algo": {
+    "id": "..\\ui\\CaptureModal.tsx -> ../src/services/algo",
+    "files": []
+  },
   "pages\\index.jsx -> ../../components/Game": {
     "id": "pages\\index.jsx -> ../../components/Game",
     "files": [
@@ -43,12 +47,6 @@
   },
   "pages\\index.jsx -> ../../lib/api/pokemonApi": {
     "id": "pages\\index.jsx -> ../../lib/api/pokemonApi",
-    "files": [
-      "static/chunks/_pages-dir-browser_lib_api_pokemonApi_ts.js"
-    ]
-  },
-  "pages\\market.jsx -> ../../lib/api/pokemonApi": {
-    "id": "pages\\market.jsx -> ../../lib/api/pokemonApi",
     "files": [
       "static/chunks/_pages-dir-browser_lib_api_pokemonApi_ts.js"
     ]
