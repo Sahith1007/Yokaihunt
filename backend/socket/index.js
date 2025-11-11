@@ -2,70 +2,36 @@
 
 import { Server } from "socket.io";
 
-let activePlayers = {};   // wallet → player state
+// wallet -> { x, y, lastSeen }
+let globalPlayers = {};
 
 export default function initSocket(server) {
   const io = new Server(server, {
-    cors: {
-      origin: "*",
-    },
+    cors: { origin: "*" },
   });
 
   io.on("connection", (socket) => {
-    console.log("Player connected:", socket.id);
-
-    // When player joins game
-    socket.on("join", (data) => {
-      const { wallet, x, y, biome, dir } = data;
-      activePlayers[wallet] = {
-        wallet,
-        x,
-        y,
-        biome,
-        dir: dir || 0,
-        lastActive: Date.now(),
-        socketId: socket.id
-      };
-
-      socket.join("world");
-      console.log(`Player ${wallet} joined world`);
+    // Minimal API: client only sends periodic updates
+    socket.on("player:update", (payload) => {
+      const { wallet, x, y } = payload || {};
+      if (!wallet || typeof x !== "number" || typeof y !== "number") return;
+      globalPlayers[wallet] = { x, y, lastSeen: Date.now() };
     });
 
-    // Movement updates
-    socket.on("move", (data) => {
-      const { wallet, x, y, biome, dir } = data;
-      if (!activePlayers[wallet]) return;
-
-      activePlayers[wallet].x = x;
-      activePlayers[wallet].y = y;
-      activePlayers[wallet].biome = biome;
-      activePlayers[wallet].dir = dir;
-      activePlayers[wallet].lastActive = Date.now();
-    });
-
-    // Cleanup on disconnect
     socket.on("disconnect", () => {
-      for (const w in activePlayers) {
-        if (activePlayers[w].socketId === socket.id) {
-          delete activePlayers[w];
-          console.log("Removed player:", w);
-        }
-      }
+      // best-effort cleanup by socket id is intentionally omitted in minimal API
     });
   });
 
-  // Broadcast every 150ms
+  // Broadcast world snapshot every ~1.5s and cleanup stale players (>10s)
   setInterval(() => {
-    io.to("world").emit("playersUpdate", activePlayers);
-
-    // Remove inactive players
+    // cleanup
     const now = Date.now();
-    for (const w in activePlayers) {
-      if (now - activePlayers[w].lastActive > 5000) {
-        delete activePlayers[w];
-      }
+    for (const w in globalPlayers) {
+      if (now - (globalPlayers[w]?.lastSeen || 0) > 10000) delete globalPlayers[w];
     }
-  }, 150);
+    io.emit("players:update", globalPlayers);
+  }, 1500);
 
   return io;
 };

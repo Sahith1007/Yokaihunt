@@ -4,31 +4,25 @@ import { io, Socket } from "socket.io-client";
 
 export default class MultiplayerHandler {
   private socket: Socket;
-  private lastMoveSent = 0;
+  private lastSent = 0;
 
   constructor() {
     const url = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
     this.socket = io(url);
-
-    this.socket.on("connect", () => {
-      console.log("Connected to multiplayer server");
-    });
   }
 
-  joinGame(wallet: string, x: number, y: number, biome: string) {
-    this.socket.emit("join", { wallet, x, y, biome });
-  }
+  // No rooms, no join step required in minimal API
+  joinGame(_wallet: string, _x: number, _y: number, _biome: string) {}
 
-  sendPosition(wallet: string, x: number, y: number, biome: string, dir: number) {
+  sendPosition(wallet: string, x: number, y: number) {
     const now = Date.now();
-    if (now - this.lastMoveSent < 200) return; // rate-limit
-
-    this.lastMoveSent = now;
-    this.socket.emit("move", { wallet, x, y, biome, dir });
+    if (now - this.lastSent < 1500) return; // emit every 1500 ms
+    this.lastSent = now;
+    this.socket.emit("player:update", { wallet, x, y });
   }
 
   onPlayersUpdate(cb: (players: any) => void) {
-    this.socket.on("playersUpdate", cb);
+    this.socket.on("players:update", cb);
   }
 
   disconnect() {

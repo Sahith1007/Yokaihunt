@@ -51,7 +51,7 @@ export default function Taskbar({ onInventory, onTeam, onMarket, starterPokemon 
 
       <Item icon="🎒" label="Inventory" onClick={onInventory} />
       <Item icon="👥" label="Team" onClick={onTeam} />
-      <Item icon="💰" label="Market" href="/market" onClick={onMarket} />
+      <Item icon="🏪" label="Market" href="/market" onClick={onMarket} />
     </div>
   );
 }

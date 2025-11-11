@@ -391,6 +391,44 @@ export class GameScene extends Phaser.Scene {
       this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
         window.removeEventListener('yokai-zone-spawns', zoneSpawnsHandler);
       });
+
+      // Listen for gym battle start
+      const gymStart = async (e: any) => {
+        try {
+          const battle = e.detail || {};
+          const enemy = (battle.enemyTeam || [])[0];
+          if (!enemy) return;
+          // Ensure enemy has data; if missing, fetch from PokeAPI
+          let data = enemy.data;
+          if (!data && enemy.species) {
+            const r = await fetch(`https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(String(enemy.species).toLowerCase())}`);
+            if (r.ok) data = await r.json();
+          }
+          const level = enemy.level || 10;
+          const hpStat = data?.stats?.find((s: any) => s.stat.name === 'hp')?.base_stat || 50;
+          const maxHp = Math.max(28, Math.floor(((hpStat * 2 + 31) * level) / 100 + level + 10));
+          this.scene.pause();
+          this.scene.launch('BattleScene', {
+            wildPokemon: { name: enemy.species, pokeId: data?.id || 1, data, spriteUrl: enemy.spriteUrl || data?.sprites?.front_default, level },
+            playerPokemon: {
+              name: this.configData.playerPokemon?.name || this.configData.playerPokemon?.displayName,
+              pokeId: this.configData.playerPokemon?.id,
+              data: this.configData.playerPokemon?.data,
+              spriteUrl: this.configData.playerPokemon?.sprite,
+              level: this.configData.playerPokemon?.level || 1,
+              currentHp: maxHp,
+              maxHp: maxHp,
+            },
+            playerTeam: [this.configData.playerPokemon].filter(Boolean),
+            trainerLevel: this.configData.trainerLevel || 1,
+            gymId: battle.gymId,
+            allowCatch: battle.allowCatch === false ? false : true,
+            allowRun: battle.allowRun === false ? false : true,
+          });
+        } catch {}
+      };
+      window.addEventListener('yokai-gym-battle-start', gymStart);
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => window.removeEventListener('yokai-gym-battle-start', gymStart));
     }
 
     // Autosave every ~2.5 minutes
@@ -446,15 +484,7 @@ export class GameScene extends Phaser.Scene {
     try {
       const wallet = typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null;
       if (wallet && this.mp) {
-        const body = this.player.body as Phaser.Physics.Arcade.Body;
-        const dir = Math.atan2(body.velocity.y, body.velocity.x) * (180 / Math.PI);
-        this.mp.sendPosition(
-          wallet,
-          this.player.x,
-          this.player.y,
-          this.getCurrentBiomeId() || "default",
-          dir
-        );
+        this.mp.sendPosition(wallet, this.player.x, this.player.y);
       }
     } catch {}
 
@@ -867,7 +897,8 @@ export class GameScene extends Phaser.Scene {
               ipfs: js.metadataCID,
               pokemon: spawn,
               xpGained: xpGained,
-              optInRequired: js.optInRequired || false
+              optInRequired: js.optInRequired || false,
+              trainer: js.trainer
             }
           }));
         }

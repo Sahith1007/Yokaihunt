@@ -20,6 +20,10 @@ interface BattleData {
   };
   playerTeam?: any[]; // Full team for switching
   trainerLevel?: number;
+  // Gym hooks
+  gymId?: string;
+  allowCatch?: boolean;
+  allowRun?: boolean;
 }
 
 export class BattleScene extends Phaser.Scene {
@@ -35,6 +39,9 @@ export class BattleScene extends Phaser.Scene {
   private playerTeam: any[] = [];
   private trainerLevel: number = 1;
   private battleTeamHp: Map<number, number> = new Map(); // Track HP during battle
+  private gymId?: string;
+  private allowCatch: boolean = true;
+  private allowRun: boolean = true;
   
   // Battle state
   private isPlayerTurn: boolean = true;
@@ -61,6 +68,9 @@ export class BattleScene extends Phaser.Scene {
     this.playerPokemon = data.playerPokemon;
     this.playerTeam = data.playerTeam || [];
     this.trainerLevel = data.trainerLevel || 1;
+    this.gymId = data.gymId;
+    if (typeof data.allowCatch === 'boolean') this.allowCatch = data.allowCatch;
+    if (typeof data.allowRun === 'boolean') this.allowRun = data.allowRun;
     
 // Calculate wild Pokemon HP with level scaling (include IV ~31) and minimum floor
     this.wildLevel = this.wildPokemon.level || 5;
@@ -176,8 +186,8 @@ export class BattleScene extends Phaser.Scene {
       { text: 'FIGHT', x: baseX, y: baseY + vGap * 0, action: () => this.showMoveSelection() },
       { text: 'SWITCH', x: baseX, y: baseY + vGap * 1, action: () => this.showTeamSelection() },
       { text: 'BAG', x: baseX, y: baseY + vGap * 2, action: () => this.openBag() },
-      { text: 'CATCH', x: baseX, y: baseY + vGap * 3, action: () => this.attemptCatch() },
-      { text: 'RUN', x: baseX, y: baseY + vGap * 4, action: () => this.runAway() }
+      ...(this.allowCatch ? [{ text: 'CATCH', x: baseX, y: baseY + vGap * 3, action: () => this.attemptCatch() }] : []),
+      ...(this.allowRun ? [{ text: 'RUN', x: baseX, y: baseY + vGap * 4, action: () => this.runAway() }] : [])
     ];
 
     buttonData.forEach(btn => {
@@ -817,10 +827,6 @@ attack: this.getStatValue(this.wildPokemon.data, 'attack', this.wildLevel),
             })
           });
           
-          // Decrement pokeball
-          const { updateInventory } = await import('../../src/services/trainer');
-          await updateInventory({ walletAddress: wallet, inventoryDelta: { pokeballs: -1 } });
-          
           // Add to local team cache
           this.playerTeam.push({
             id: this.wildPokemon.pokeId,
@@ -1046,6 +1052,10 @@ attack: this.getStatValue(this.wildPokemon.data, 'attack', this.wildLevel),
   }
 
   private async wildDefeated() {
+    // Gym battle hook: victory event
+    if (this.gymId && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('yokai-gym-battle-win', { detail: { gymId: this.gymId } }));
+    }
     // Calculate EXP: enemyLevel * 5 (as per spec)
     const expGained = this.wildLevel * 5;
     this.updateBattleText(`Wild ${this.capitalize(this.wildPokemon.name)} fainted! Gained ${expGained} EXP!`);

@@ -6,8 +6,6 @@ import InventoryModal from "../../components/Modals/InventoryModal";
 import TeamModal from "../../components/Modals/TeamModal";
 import StarterSelection from "../../components/StarterSelection";
 import { hasStarterPokemon, loadStarterPokemon } from "../../lib/pokeapi";
-import { HUD } from "../../ui/HUD";
-import { LogModal } from "../../ui/LogModal";
 import { CaptureModal } from "../../ui/CaptureModal";
 
 const Game = dynamic(() => import("../../components/Game"), { ssr: false });
@@ -24,8 +22,6 @@ export default function Home() {
   const [showStarterSelection, setShowStarterSelection] = useState(false);
   const [starterPokemon, setStarterPokemon] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
-  const [logOpen, setLogOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
   const [captureState, setCaptureState] = useState({ 
     open: false, 
     outcome: null, 
@@ -61,7 +57,7 @@ export default function Home() {
         setCaptureState({ open: true, outcome: null, txId: null, spawn: d.spawn });
       }
     };
-    const resultHandler = (e) => {
+    const resultHandler = async (e) => {
       const d = e.detail || {};
       setCaptureState(prev => ({ 
         ...prev, 
@@ -75,6 +71,15 @@ export default function Home() {
         optInRequired: d.optInRequired || false,
         pokemon: d.pokemon || prev.spawn
       }));
+      
+      // If capture was successful and trainer was updated, refresh player team
+      if (d.outcome === 'success' && d.trainer) {
+        // Update local state with new trainer.team
+        if (d.trainer.team && d.trainer.team.length > 0) {
+          setPlayerPokemon(d.trainer.team);
+          if (!selectedPokemon) setSelectedPokemon(d.trainer.team[0]);
+        }
+      }
     };
     window.addEventListener('yokai-spawn-proximity', proximityHandler);
     window.addEventListener('yokai-capture-result', resultHandler);
@@ -82,7 +87,7 @@ export default function Home() {
       window.removeEventListener('yokai-spawn-proximity', proximityHandler);
       window.removeEventListener('yokai-capture-result', resultHandler);
     };
-  }, []);
+  }, [selectedPokemon]);
 
   // Load player data (only once)
   useEffect(() => {
@@ -171,15 +176,12 @@ export default function Home() {
         </aside>
       </div>
 
-      <HUD onInventory={() => setShowInventory(true)} onChat={() => setChatOpen(!chatOpen)} onLog={() => setLogOpen(true)} />
-
       <InventoryModal open={showInventory} onClose={() => setShowInventory(false)} />
       <TeamModal 
         open={showTeam} 
         team={starterPokemon ? [starterPokemon, ...playerPokemon].slice(0, 6) : playerPokemon.slice(0, 6)} 
         onClose={() => setShowTeam(false)} 
       />
-      <LogModal open={logOpen} onClose={() => setLogOpen(false)} wallet={(typeof window !== 'undefined' ? localStorage.getItem('algorand_wallet_address') : null)} />
       <CaptureModal 
         open={captureState.open} 
         outcome={captureState.outcome} 

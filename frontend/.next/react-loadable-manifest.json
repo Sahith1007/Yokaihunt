@@ -1,4 +1,54 @@
 {
+  "..\\..\\node_modules\\@blockshake\\defly-connect\\dist\\index-cd5905ac.js -> ./App-58ab7d48.js": {
+    "id": "..\\..\\node_modules\\@blockshake\\defly-connect\\dist\\index-cd5905ac.js -> ./App-58ab7d48.js",
+    "files": [
+      "static/chunks/_pages-dir-browser_node_modules_blockshake_defly-connect_dist_App-58ab7d48_js.js"
+    ]
+  },
+  "..\\..\\node_modules\\@perawallet\\connect\\dist\\index-87e811df.js -> ./App-428f5096.js": {
+    "id": "..\\..\\node_modules\\@perawallet\\connect\\dist\\index-87e811df.js -> ./App-428f5096.js",
+    "files": [
+      "static/chunks/_pages-dir-browser_node_modules_perawallet_connect_dist_App-428f5096_js.js"
+    ]
+  },
+  "..\\..\\node_modules\\@txnlab\\use-wallet\\dist\\index.js -> @agoralabs-sh/avm-web-provider": {
+    "id": "..\\..\\node_modules\\@txnlab\\use-wallet\\dist\\index.js -> @agoralabs-sh/avm-web-provider",
+    "files": [
+      "static/chunks/_pages-dir-browser_node_modules_agoralabs-sh_avm-web-provider_dist_index_js.js"
+    ]
+  },
+  "..\\..\\node_modules\\@txnlab\\use-wallet\\dist\\index.js -> @blockshake/defly-connect": {
+    "id": "..\\..\\node_modules\\@txnlab\\use-wallet\\dist\\index.js -> @blockshake/defly-connect",
+    "files": []
+  },
+  "..\\..\\node_modules\\@txnlab\\use-wallet\\dist\\index.js -> @perawallet/connect": {
+    "id": "..\\..\\node_modules\\@txnlab\\use-wallet\\dist\\index.js -> @perawallet/connect",
+    "files": []
+  },
+  "..\\..\\node_modules\\@txnlab\\use-wallet\\dist\\index.js -> @walletconnect/modal": {
+    "id": "..\\..\\node_modules\\@txnlab\\use-wallet\\dist\\index.js -> @walletconnect/modal",
+    "files": [
+      "static/chunks/_pages-dir-browser_node_modules_walletconnect_modal_dist_index_js.js"
+    ]
+  },
+  "..\\..\\node_modules\\@txnlab\\use-wallet\\dist\\index.js -> @walletconnect/sign-client": {
+    "id": "..\\..\\node_modules\\@txnlab\\use-wallet\\dist\\index.js -> @walletconnect/sign-client",
+    "files": [
+      "static/chunks/_pages-dir-browser_node_modules_walletconnect_sign-client_dist_index_js.js"
+    ]
+  },
+  "..\\..\\node_modules\\@txnlab\\use-wallet\\dist\\index.js -> lute-connect": {
+    "id": "..\\..\\node_modules\\@txnlab\\use-wallet\\dist\\index.js -> lute-connect",
+    "files": [
+      "static/chunks/_pages-dir-browser_node_modules_lute-connect_dist_main_esm_js.js"
+    ]
+  },
+  "..\\..\\node_modules\\@walletconnect\\modal\\dist\\index.js -> @walletconnect/modal-ui": {
+    "id": "..\\..\\node_modules\\@walletconnect\\modal\\dist\\index.js -> @walletconnect/modal-ui",
+    "files": [
+      "static/chunks/_pages-dir-browser_node_modules_walletconnect_modal-ui_dist_index_js.js"
+    ]
+  },
   "..\\..\\node_modules\\next\\dist\\client\\index.js -> ../pages/_app": {
     "id": "..\\..\\node_modules\\next\\dist\\client\\index.js -> ../pages/_app",
     "files": [
@@ -15,12 +65,6 @@
     "id": "..\\components\\Modals\\InventoryModal.tsx -> ../../lib/api/pokemonApi",
     "files": [
       "static/chunks/_pages-dir-browser_lib_api_pokemonApi_ts.js"
-    ]
-  },
-  "..\\lib\\phaser\\BattleScene.ts -> ../../src/services/trainer": {
-    "id": "..\\lib\\phaser\\BattleScene.ts -> ../../src/services/trainer",
-    "files": [
-      "static/chunks/_pages-dir-browser_src_services_trainer_ts.js"
     ]
   },
   "..\\lib\\phaser\\GameScene.ts -> ../../src/services/saveQueue": {

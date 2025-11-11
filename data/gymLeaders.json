@@ -1,0 +1,125 @@
+[
+  {
+    "id": "kanto-brock",
+    "region": "Kanto",
+    "order": 1,
+    "name": "Brock",
+    "leaderNotes": "Rock-type specialist",
+    "badgeId": "kanto_rock_badge",
+    "difficulty": 1,
+    "rewardXP": 250,
+    "team": [
+      { "species": "Geodude", "level": 12, "moves": ["Tackle", "Defense Curl", "Rock Throw", "Magnitude"] },
+      { "species": "Onix", "level": 14, "moves": ["Tackle", "Bind", "Rock Throw", "Screech"] }
+    ]
+  },
+  {
+    "id": "kanto-misty",
+    "region": "Kanto",
+    "order": 2,
+    "name": "Misty",
+    "leaderNotes": "Water-type specialist",
+    "badgeId": "kanto_cascade_badge",
+    "difficulty": 1,
+    "rewardXP": 300,
+    "team": [
+      { "species": "Staryu", "level": 18, "moves": ["Tackle", "Water Gun", "Rapid Spin", "Recover"] },
+      { "species": "Starmie", "level": 21, "moves": ["Swift", "Water Pulse", "Recover", "Psybeam"] }
+    ]
+  },
+  {
+    "id": "kanto-lt-surge",
+    "region": "Kanto",
+    "order": 3,
+    "name": "Lt. Surge",
+    "leaderNotes": "Electric-type specialist",
+    "badgeId": "kanto_thunder_badge",
+    "difficulty": 2,
+    "rewardXP": 350,
+    "team": [
+      { "species": "Voltorb", "level": 21, "moves": ["Tackle", "Sonic Boom", "Spark", "Rollout"] },
+      { "species": "Pikachu", "level": 18, "moves": ["Quick Attack", "Thunder Wave", "Double Team", "Spark"] },
+      { "species": "Raichu", "level": 24, "moves": ["Quick Attack", "Thunderbolt", "Slam", "Double Team"] }
+    ]
+  },
+  {
+    "id": "kanto-erika",
+    "region": "Kanto",
+    "order": 4,
+    "name": "Erika",
+    "leaderNotes": "Grass-type specialist",
+    "badgeId": "kanto_rainbow_badge",
+    "difficulty": 2,
+    "rewardXP": 380,
+    "team": [
+      { "species": "Victreebel", "level": 29, "moves": ["Acid", "Razor Leaf", "Sleep Powder", "Wrap"] },
+      { "species": "Tangela", "level": 24, "moves": ["Vine Whip", "Bind", "Stun Spore", "Mega Drain"] },
+      { "species": "Vileplume", "level": 29, "moves": ["Acid", "Sleep Powder", "Petal Dance", "Moonlight"] }
+    ]
+  },
+  {
+    "id": "kanto-koga",
+    "region": "Kanto",
+    "order": 5,
+    "name": "Koga",
+    "leaderNotes": "Poison-type specialist",
+    "badgeId": "kanto_soul_badge",
+    "difficulty": 3,
+    "rewardXP": 420,
+    "team": [
+      { "species": "Koffing", "level": 37, "moves": ["Sludge", "Self-Destruct", "Smokescreen", "Tackle"] },
+      { "species": "Muk", "level": 39, "moves": ["Sludge", "Minimize", "Disable", "Acid Armor"] },
+      { "species": "Koffing", "level": 37, "moves": ["Sludge", "Tackle", "Self-Destruct", "Haze"] },
+      { "species": "Weezing", "level": 43, "moves": ["Sludge", "Smokescreen", "Explosion", "Tackle"] }
+    ]
+  },
+  {
+    "id": "kanto-sabrina",
+    "region": "Kanto",
+    "order": 6,
+    "name": "Sabrina",
+    "leaderNotes": "Psychic-type specialist",
+    "badgeId": "kanto_marsh_badge",
+    "difficulty": 3,
+    "rewardXP": 460,
+    "team": [
+      { "species": "Kadabra", "level": 38, "moves": ["Psybeam", "Recover", "Future Sight", "Role Play"] },
+      { "species": "Mr. Mime", "level": 37, "moves": ["Barrier", "Psybeam", "Light Screen", "Reflect"] },
+      { "species": "Venomoth", "level": 38, "moves": ["Psybeam", "Gust", "Stun Spore", "Supersonic"] },
+      { "species": "Alakazam", "level": 43, "moves": ["Psychic", "Recover", "Calm Mind", "Future Sight"] }
+    ]
+  },
+  {
+    "id": "kanto-blaine",
+    "region": "Kanto",
+    "order": 7,
+    "name": "Blaine",
+    "leaderNotes": "Fire-type specialist",
+    "badgeId": "kanto_volcano_badge",
+    "difficulty": 4,
+    "rewardXP": 500,
+    "team": [
+      { "species": "Growlithe", "level": 42, "moves": ["Flamethrower", "Roar", "Bite", "Agility"] },
+      { "species": "Ponyta", "level": 40, "moves": ["Flame Wheel", "Stomp", "Agility", "Fire Spin"] },
+      { "species": "Rapidash", "level": 42, "moves": ["Flame Wheel", "Stomp", "Quick Attack", "Agility"] },
+      { "species": "Arcanine", "level": 47, "moves": ["Flamethrower", "Extreme Speed", "Bite", "Roar"] }
+    ]
+  },
+  {
+    "id": "kanto-giovanni",
+    "region": "Kanto",
+    "order": 8,
+    "name": "Giovanni",
+    "leaderNotes": "Ground-type specialist",
+    "badgeId": "kanto_earth_badge",
+    "difficulty": 4,
+    "rewardXP": 550,
+    "team": [
+      { "species": "Rhyhorn", "level": 45, "moves": ["Horn Attack", "Rock Blast", "Scary Face", "Take Down"] },
+      { "species": "Dugtrio", "level": 42, "moves": ["Slash", "Sand Attack", "Mud-Slap", "Earthquake"] },
+      { "species": "Nidoqueen", "level": 44, "moves": ["Body Slam", "Poison Sting", "Earthquake", "Tail Whip"] },
+      { "species": "Nidoking", "level": 45, "moves": ["Thrash", "Poison Sting", "Earthquake", "Horn Attack"] },
+      { "species": "Rhydon", "level": 50, "moves": ["Earthquake", "Rock Slide", "Horn Drill", "Fury Attack"] }
+    ]
+  }
+]

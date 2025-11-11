@@ -43,8 +43,14 @@ import captureRoutes from "./routes/capture.js";
 app.use("/api", captureRoutes);
 import playerRoutes from "./routes/player.js";
 app.use("/api", playerRoutes);
-import pokemonRoutes from "./routes/pokemon.js";
-app.use("/api", pokemonRoutes);
+import nftFlowRoutes from "./routes/nftFlow.js";
+app.use("/api", nftFlowRoutes);
+import nftShowcaseRoutes from "./routes/nftShowcase.js";
+app.use("/api", nftShowcaseRoutes);
+import adminPendingUI from "../backend/admin/pendingOrdersUI.js";
+app.use("/", adminPendingUI);
+import gymRoutes from "./routes/gym.js";
+app.use("/api", gymRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

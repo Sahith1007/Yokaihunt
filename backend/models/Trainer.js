@@ -28,8 +28,21 @@ const TrainerSchema = new mongoose.Schema(
     xp: { type: Number, default: 0 }, // total XP (back-compat)
     currentXP: { type: Number, default: 0 }, // XP within current level
     nextLevelXP: { type: Number, default: 100 },
+
+    // Legacy team/storage kept for gameplay compatibility
     team: { type: [PokemonSubSchema], default: [] },
     storage: { type: [PokemonSubSchema], default: [] },
+
+    // New lightweight refs for Team Management + Showcase NFT
+    teamSlots: {
+      type: [
+        new mongoose.Schema({ uid: String, assetId: Number }, { _id: false })
+      ],
+      default: []
+    },
+    inventoryRefs: { type: [String], default: [] }, // list of NFTItem.uid in inventory
+    showcaseUid: { type: String, default: null },
+
     inventory: {
       pokeballs: { type: Number, default: 10 },
       potions: { type: Number, default: 0 },

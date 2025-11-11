@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import Link from "next/link";
+import WalletStatus from "./WalletStatus";
 
 interface SidebarProps {
   spotted: { name: string; spriteUrl: string; pokeId: number } | null;
@@ -31,6 +32,9 @@ export default function Sidebar({ spotted, nearby, balls, playerPokemon, selecte
             <button className={`px-2 py-1 text-xs rounded ${tab === 'report' ? 'bg-white/20' : 'bg-transparent'}`} onClick={() => setTab("report")}>Field Report</button>
             <button className={`px-2 py-1 text-xs rounded ${tab === 'nearby' ? 'bg-white/20' : 'bg-transparent'}`} onClick={() => setTab("nearby")}>Nearby Pokémon</button>
             <button className={`px-2 py-1 text-xs rounded ${tab === 'player' ? 'bg-white/20' : 'bg-transparent'}`} onClick={() => setTab("player")}>Player Info</button>
+          </div>
+          <div className="px-3 py-2 border-b border-white/10">
+            <WalletStatus />
           </div>
           <div className="flex-1 overflow-auto p-3 text-sm">
             {tab === "report" && (

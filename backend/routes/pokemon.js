@@ -3,8 +3,9 @@
 
 import express from 'express';
 import algosdk from 'algosdk';
+import fetch from 'node-fetch';
 import { uploadImageFromBase64, uploadJSON } from '../services/pinata.js';
-import { getClient, getIndexer, getCreatorAccount, confirmTx } from '../services/algorand.js';
+import { getClient, getIndexer, getCreatorAccount, confirmTx, sendNFT } from '../services/algorand.js';
 import Pokemon from '../models/Pokemon.js';
 import TxLog from '../models/TxLog.js';
 
@@ -28,20 +29,29 @@ router.post('/pokemon/caught', async (req, res) => {
     // Step 1: Upload image to Pinata
     const imageCid = await uploadImageFromBase64(imageBase64, `${name}-${Date.now()}.png`);
 
-    // Step 2: Create metadata (static, no XP/level)
-    const metadata = {
-      name: name,
-      description: 'A Yokai creature',
-      image: `ipfs://${imageCid}`,
-      attributes: [
-        { trait_type: 'rarity', value: rarity }
-      ]
-    };
+  // Step 2: Build metadata (must include: name, species, image, stats)
+  // Fetch stats from PokeAPI (best-effort)
+  let stats = [];
+  try {
+    const speciesKey = encodeURIComponent(String(name).toLowerCase());
+    const resp = await fetch(`https://pokeapi.co/api/v2/pokemon/${speciesKey}`);
+    if (resp.ok) {
+      const js = await resp.json();
+      stats = (js.stats || []).map((s) => ({ name: s?.stat?.name, value: s?.base_stat })).filter((x) => x.name != null);
+    }
+  } catch {}
 
-    // Step 3: Upload metadata to Pinata
-    const metadataCid = await uploadJSON(metadata);
+  const metadata = {
+    name: name,
+    species: name,
+    image: `ipfs://${imageCid}`,
+    stats,
+  };
 
-    // Step 4: Mint NFT ASA
+  // Step 3: Upload metadata to Pinata
+  const metadataCid = await uploadJSON(metadata);
+
+  // Step 4: Mint NFT ASA
     const algod = getClient();
     const creator = getCreatorAccount();
     const suggestedParams = await algod.getTransactionParams().do();
@@ -84,7 +94,7 @@ router.post('/pokemon/caught', async (req, res) => {
       xp: 0
     });
 
-    // Log transaction
+    // Log mint transaction
     await TxLog.create({
       walletAddress,
       txId,
@@ -93,10 +103,36 @@ router.post('/pokemon/caught', async (req, res) => {
       meta: { assetId, name, rarity }
     });
 
+    // Attempt transfer to player (requires opt-in)
+    let txIdSend = null;
+    let optInRequired = false;
+    try {
+      const sendRes = await sendNFT({ assetId: Number(assetId), to: walletAddress });
+      txIdSend = sendRes.txId;
+      await TxLog.create({ walletAddress, txId: txIdSend, type: 'TRANSFER', asset: 'Yokai', meta: { assetId } });
+    } catch (e) {
+      // If recipient not opted in, return this info to client
+      optInRequired = true;
+    }
+
+    // Award XP (backend-side) — 30xp for success
+    try {
+      const { default: Trainer } = await import('../models/Trainer.js');
+      await Trainer.updateOne(
+        { walletAddress },
+        { $setOnInsert: { walletAddress }, $inc: { xp: 30, currentXP: 30 } },
+        { upsert: true }
+      );
+      await Pokemon.updateOne({ assetId }, { $inc: { xp: 30 } });
+    } catch {}
+
     return res.json({
       success: true,
       assetId,
-      txId,
+      txId: txId, // mint tx
+      txIdMint: txId,
+      txIdSend,
+      optInRequired,
       metadataCid,
       pokemonId: pokemon._id
     });

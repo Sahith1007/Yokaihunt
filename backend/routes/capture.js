@@ -163,6 +163,31 @@ router.post('/capture', async (req, res) => {
         }
       });
 
+      // Build Pokémon object and add to trainer.inventory
+      const pokemonObj = {
+        name: pokemonName,
+        pokeId: pokemonId,
+        sprite: pokemonSprite || `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemonId}.png`,
+        level: 1,
+        xp: 0,
+        assetId: Number(assetId),
+        txId: txIdSend,
+        metadata_cid: metadataCID,
+        caughtAt: new Date()
+      };
+
+      // Push to inventory; if team < 6, also push to team
+      const updateObj = { $push: { inventory: pokemonObj } };
+      if (!trainer || !trainer.team || trainer.team.length < 6) {
+        updateObj.$push.team = pokemonObj;
+      }
+
+      const updated = await Trainer.findOneAndUpdate(
+        { walletAddress },
+        updateObj,
+        { new: true }
+      );
+
       return res.json({
         success: true,
         assetId,
@@ -173,7 +198,9 @@ router.post('/capture', async (req, res) => {
         xp: baseXP,
         level: newLevel,
         currentXP,
-        nextLevelXP
+        nextLevelXP,
+        pokemon: pokemonObj,
+        trainer: updated
       });
 
     } catch (error) {

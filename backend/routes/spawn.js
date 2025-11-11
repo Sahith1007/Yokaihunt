@@ -75,27 +75,47 @@ function generateSpawn(biome, level, zoneId) {
 }
 
 router.get('/spawn/sync', (req, res) => {
-  const biome = (req.query.biome || 'grassland').toString();
-  const level = Number(req.query.level || 1);
+  // Minimal, no biomes: weight Gen1/2/3/Orange League
   const density = Math.max(1, Number(req.query.players || 1));
   const zoneId = req.query.zoneId?.toString() || getZoneId(Number(req.query.x || 0), Number(req.query.y || 0));
   const target = Math.min(8, Math.max(3, 3 + Math.floor(Math.random() * 5) + Math.floor(density / 3)));
 
-  // Get or create spawns for this zone
-  const zoneKey = `${zoneId}_${biome}`;
+  const zoneKey = `${zoneId}_nobiome`;
   const list = (cache.get(zoneKey) || []).filter(s => s.expiresAt > Date.now() && s.zoneId === zoneId);
-  
-  // Repopulate if needed (every 30 seconds or if empty)
+
+  const pickGenWeighted = () => {
+    const r = Math.random();
+    if (r < 0.6) return [1, 151];        // Gen1 60%
+    if (r < 0.85) return [152, 251];      // Gen2 25%
+    if (r < 0.97) return [252, 386];      // Gen3 12%
+    // Orange League (fan set) — pick a few mascots (use Gen1 substitutes)
+    return [25, 26];                       // Pikachu/Raichu fallback
+  };
+
   while (list.length < target) {
-    list.push(generateSpawn(biome, level, zoneId));
+    const [lo, hi] = pickGenWeighted();
+    const pokeId = typeof lo === 'number' && typeof hi === 'number' ? (Math.floor(Math.random() * (hi - lo + 1)) + lo) : lo;
+    const x = between(0, 60 * 32);
+    const y = between(0, 40 * 32);
+    list.push({
+      id: uuidv4(),
+      species: `poke-${pokeId}`,
+      name: `poke-${pokeId}`,
+      pokeId,
+      x,
+      y,
+      spriteURL: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokeId}.png`,
+      sprite: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokeId}.png`,
+      expiresAt: Date.now() + 60000,
+      zoneId
+    });
   }
-  
+
   cache.set(zoneKey, list);
-  
-  // Cleanup old zones (keep only last 50 zones)
+
+  // prune cache to last 50 zone keys
   if (cache.size > 50) {
-    const entries = Array.from(cache.entries());
-    entries.sort((a, b) => {
+    const entries = Array.from(cache.entries()).sort((a, b) => {
       const aTime = Math.max(...(a[1] || []).map(s => s.expiresAt || 0));
       const bTime = Math.max(...(b[1] || []).map(s => s.expiresAt || 0));
       return bTime - aTime;
@@ -103,8 +123,19 @@ router.get('/spawn/sync', (req, res) => {
     cache.clear();
     entries.slice(0, 50).forEach(([k, v]) => cache.set(k, v));
   }
-  
-  res.json({ biome, zoneId, spawns: list });
+
+  res.json({ zoneId, spawns: list.map(s => ({
+    id: s.id,
+    species: s.name,
+    x: s.x,
+    y: s.y,
+    spriteURL: s.sprite,
+    // legacy fields for existing client
+    pokeId: s.pokeId,
+    name: s.name,
+    sprite: s.sprite,
+    position: { x: s.x, y: s.y }
+  })) });
 });
 
 export default router;
