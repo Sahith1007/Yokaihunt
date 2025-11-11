@@ -2,7 +2,7 @@ import express from 'express';
 import { nanoid } from 'nanoid';
 import NFTItem from '../models/NFTItem.js';
 import { pinJSON } from '../services/pinataService.js';
-import { mintFrozenAsset, transferToOwner, updateAssetMetadata, waitForPayment } from '../services/algorandWeb3Service.js';
+import { mintASA, transferAsset, updateAssetMetadata, indexerClient, CREATOR_ACCOUNT } from '../services/algorandService.js';
 
 const router = express.Router();
 
@@ -46,8 +46,8 @@ router.post('/nft/mint/frozen', async (req,res)=>{
     if(doc.minted) return res.json({ ok:true, assetId:doc.assetId, minted:true });
     const meta = await buildMetadata(doc);
     const cid = await pinJSON(meta);
-    const { txId: mintTxId, assetId } = await mintFrozenAsset({ name: meta.name, url:`ipfs://${cid}` });
-    const { txId: transferTxId } = await transferToOwner({ assetId, to: owner });
+    const { txId: mintTxId, assetId } = await mintASA({ metadataUrl: `ipfs://${cid}`, assetName: meta.name });
+    const { txId: transferTxId } = await transferAsset({ assetId, fromSk: CREATOR_ACCOUNT?.sk, fromAddr: CREATOR_ACCOUNT?.addr, toAddr: owner });
     doc.minted = true; doc.assetId = assetId; doc.metadataCid = cid; doc.liveUpdating=false; await doc.save();
     res.json({ ok:true, assetId, mintTxId, transferTxId, metadataCid:cid });
   }catch(e){ res.status(500).json({ ok:false, error:e.message||'mint failed' }); }
@@ -61,8 +61,8 @@ router.post('/nft/mint/live-init', async (req,res)=>{
     if(!doc || doc.ownerWallet.toLowerCase()!==owner.toLowerCase()) return res.status(404).json({ ok:false, error:'not found' });
     const meta = await buildMetadata(doc);
     const cid = await pinJSON(meta);
-    const { txId: mintTxId, assetId } = await mintFrozenAsset({ name: meta.name, url:`ipfs://${cid}` });
-    const { txId: transferTxId } = await transferToOwner({ assetId, to: owner });
+    const { txId: mintTxId, assetId } = await mintASA({ metadataUrl: `ipfs://${cid}`, assetName: meta.name });
+    const { txId: transferTxId } = await transferAsset({ assetId, fromSk: CREATOR_ACCOUNT?.sk, fromAddr: CREATOR_ACCOUNT?.addr, toAddr: owner });
     doc.minted = true; doc.assetId = assetId; doc.metadataCid = cid; doc.liveUpdating=true; await doc.save();
     res.json({ ok:true, assetId, mintTxId, transferTxId, metadataCid:cid });
   }catch(e){ res.status(500).json({ ok:false, error:e.message||'mint failed' }); }
@@ -94,14 +94,16 @@ router.post('/nft/verify-payment', async (req,res)=>{
   try{
     const { orderId, paymentTxId, uid } = req.body||{}; const doc = await NFTItem.findOne({ uid });
     if(!doc || !doc.pendingOrder || doc.pendingOrder.orderId!==orderId) return res.status(404).json({ ok:false, error:'order not found' });
-    const tx = await waitForPayment(paymentTxId);
-    const to = tx['payment-transaction']?.receiver || tx['tx-type']==='pay' && tx['payment-transaction']?.receiver;
+    const resp = await indexerClient.searchForTransactions().txid(paymentTxId).do();
+    const tx = resp?.transactions?.[0];
+    if(!tx || !tx['payment-transaction']) return res.status(400).json({ ok:false, error:'payment not found' });
+    const to = tx['payment-transaction']?.receiver;
     const amt = tx['payment-transaction']?.amount || 0;
     if(String(to)!==String(doc.pendingOrder.backendWallet) || amt < doc.pendingOrder.amountMicroAlgos) return res.status(400).json({ ok:false, error:'payment mismatch' });
     // Pin new metadata and update ASA URL
     const meta = await buildMetadata(doc);
     const cid = await pinJSON(meta);
-    const { txId: configTxId } = await updateAssetMetadata({ assetId: doc.assetId, url:`ipfs://${cid}` });
+    const { txId: configTxId } = await updateAssetMetadata({ assetId: doc.assetId, newMetadataUrl:`ipfs://${cid}` });
     doc.metadataCid = cid; doc.lastOnChainSync = new Date(); doc.pendingOrder.status='PAID'; doc.pendingOrder.paymentTxId = paymentTxId; await doc.save();
     res.json({ ok:true, configTxId, metadataCid: cid });
   }catch(e){ res.status(500).json({ ok:false, error:e.message||'verify failed' }); }
@@ -112,7 +114,7 @@ router.post('/nft/update-metadata', async (req,res)=>{
   try{
     const { uid } = req.body||{}; const doc = await NFTItem.findOne({ uid }); if(!doc) return res.status(404).json({ ok:false, error:'not found' });
     const cid = await pinJSON(await buildMetadata(doc));
-    const { txId } = await updateAssetMetadata({ assetId: doc.assetId, url:`ipfs://${cid}` });
+    const { txId } = await updateAssetMetadata({ assetId: doc.assetId, newMetadataUrl:`ipfs://${cid}` });
     doc.metadataCid = cid; doc.lastOnChainSync = new Date(); await doc.save();
     res.json({ ok:true, configTxId: txId, metadataCid: cid });
   }catch(e){ res.status(500).json({ ok:false, error:'failed' }); }
