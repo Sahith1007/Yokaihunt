@@ -1,8 +1,8 @@
-import NFTItem from '../models/NFTItem.js';
-import { nanoid } from 'nanoid';
-import { indexer } from './algorandWeb3Service.js';
+const NFTItem = require('../models/NFTItem.js').default || require('../models/NFTItem.js');
+const { nanoid } = require('nanoid');
+const { indexerClient } = require('./algorandService');
 
-export async function createOrder({ uid, ownerWallet, amountMicroAlgos, backendWallet }) {
+async function createOrder({ uid, ownerWallet, amountMicroAlgos, backendWallet }) {
   const orderId = nanoid(12);
   const doc = await NFTItem.findOne({ uid, ownerWallet });
   if (!doc) throw new Error('item not found');
@@ -11,19 +11,15 @@ export async function createOrder({ uid, ownerWallet, amountMicroAlgos, backendW
   return doc.pendingOrder;
 }
 
-export async function verifyPaymentByTxId({ orderId, paymentTxId }) {
-  // naive lookup with retries
-  const max = 20; let last = null;
-  for (let i = 0; i < max; i++) {
-    try { last = await indexer().lookupTransactionByID(paymentTxId).do(); if (last?.transaction) break; } catch {}
-    await new Promise(r => setTimeout(r, 1500));
-  }
-  if (!last?.transaction) throw new Error('payment not found');
-  // Find order
+async function verifyPaymentByTxId({ orderId, paymentTxId }) {
+  const resp = await indexerClient.searchForTransactions().txid(paymentTxId).do();
+  if (!resp?.transactions?.length) throw new Error('payment not found');
+  const t = resp.transactions[0];
+  if (!t['payment-transaction']) throw new Error('not a payment tx');
+  const to = t['payment-transaction'].receiver;
+  const amt = t['payment-transaction'].amount || 0;
   const doc = await NFTItem.findOne({ 'pendingOrder.orderId': orderId });
   if (!doc) throw new Error('order missing');
-  const to = last.transaction['payment-transaction']?.receiver;
-  const amt = last.transaction['payment-transaction']?.amount || 0;
   if (String(to) !== String(doc.pendingOrder.backendWallet) || amt < doc.pendingOrder.amountMicroAlgos) throw new Error('payment mismatch');
   doc.pendingOrder.status = 'PAID';
   doc.pendingOrder.paymentTxId = paymentTxId;
@@ -31,7 +27,7 @@ export async function verifyPaymentByTxId({ orderId, paymentTxId }) {
   return doc.pendingOrder;
 }
 
-export async function completeOrder({ orderId, paymentTxId, configTxId, metadataCid }) {
+async function completeOrder({ orderId, paymentTxId, configTxId, metadataCid }) {
   const doc = await NFTItem.findOne({ 'pendingOrder.orderId': orderId });
   if (!doc) return null;
   doc.pendingOrder.status = 'PAID';
@@ -40,3 +36,5 @@ export async function completeOrder({ orderId, paymentTxId, configTxId, metadata
   await doc.save();
   return true;
 }
+
+module.exports = { createOrder, verifyPaymentByTxId, completeOrder };

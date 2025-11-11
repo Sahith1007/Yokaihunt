@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import NFTItem from '../models/NFTItem.js';
 import Trainer from '../models/Trainer.js';
 import { pinJSON } from '../services/pinataService.js';
-import { mintFrozenAsset, transferToOwner, updateAssetMetadata } from '../services/algorandWeb3Service.js';
+import { mintASA, transferAsset, updateAssetMetadata } from '../services/algorandService.js';
 import { createOrder, verifyPaymentByTxId, completeOrder } from '../services/paymentService.js';
 
 const router = express.Router();
@@ -41,8 +41,8 @@ router.post('/showcase/mint', async (req,res)=>{
     if(doc.minted) return res.status(400).json({ ok:false, error:'already minted' });
     const meta = await buildMetadata(doc);
     const cid = await pinJSON(meta);
-    const { txId: mintTxId, assetId } = await mintFrozenAsset({ name: meta.name, url:`ipfs://${cid}` });
-    const { txId: transferTxId } = await transferToOwner({ assetId, to: owner });
+    const { txId: mintTxId, assetId } = await mintASA({ metadataUrl: `ipfs://${cid}`, assetName: meta.name });
+    const { txId: transferTxId } = await transferAsset({ assetId, fromSk: null, fromAddr: process.env.CREATOR_ADDRESS, toAddr: owner });
     doc.minted = true; doc.assetId = assetId; doc.metadataCid = cid; doc.liveUpdating = (mode==='live'); doc.showcase = true;
     await doc.save();
     // Set showcaseUid on trainer and unset previous
@@ -67,7 +67,7 @@ router.post('/showcase/verifyPayment', async (req,res)=>{
     const { orderId, paymentTxId } = req.body||{}; const order = await verifyPaymentByTxId({ orderId, paymentTxId });
     const doc = await NFTItem.findOne({ uid: order.uid });
     const meta = await buildMetadata(doc); const cid = await pinJSON(meta);
-    const { txId: configTxId } = await updateAssetMetadata({ assetId: doc.assetId, url:`ipfs://${cid}` });
+    const { txId: configTxId } = await updateAssetMetadata({ assetId: doc.assetId, newMetadataUrl:`ipfs://${cid}` });
     doc.metadataCid = cid; doc.lastOnChainSync = new Date(); await doc.save();
     await completeOrder({ orderId, paymentTxId, configTxId, metadataCid: cid });
     res.json({ ok:true, configTxId, metadataCid: cid });
