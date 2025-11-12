@@ -1,7 +1,7 @@
 const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
 const API = `${BASE_URL}/api`;
 
-function walletHeader(walletAddress?: string) {
+function walletHeader(walletAddress?: string): Record<string, string> {
   if (!walletAddress && typeof window !== 'undefined') {
     walletAddress = localStorage.getItem('algorand_wallet_address') || undefined;
   }

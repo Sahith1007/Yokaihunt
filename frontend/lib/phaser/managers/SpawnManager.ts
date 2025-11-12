@@ -1,1 +1,1 @@
-export { SpawnManager } from '../../../spawnUtils';
+export { SpawnManager } from '../../spawnUtils';

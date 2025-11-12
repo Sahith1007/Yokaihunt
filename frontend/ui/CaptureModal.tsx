@@ -123,8 +123,9 @@ export function CaptureModal({ open, outcome, txId, txIdMint, txIdSend, assetId,
     } catch (error) {
       console.error('Opt-in error:', error);
       if (typeof window !== 'undefined') {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         window.dispatchEvent(new CustomEvent('yokai-toast', { 
-          detail: { message: `Opt-in failed: ${error.message}` } 
+          detail: { message: `Opt-in failed: ${errorMessage}` } 
         }));
       }
     } finally {

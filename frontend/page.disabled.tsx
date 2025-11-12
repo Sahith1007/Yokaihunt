@@ -74,7 +74,6 @@ export default function Home() {
             onInventory={() => setShowInventory(true)}
             onTeam={() => setShowTeam(true)}
             onMarket={() => {}}
-            onWallet={() => {}}
           />
         </section>
 

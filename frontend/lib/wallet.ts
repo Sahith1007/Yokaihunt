@@ -24,17 +24,17 @@ export const walletManager = {
       { id: "pera", clientStatic: PeraWalletConnect },
       { id: "myalgo", clientStatic: MyAlgoConnect },
       { id: "defly", clientStatic: DeflyWalletConnect },
-    ];
+    ] as any;
 
     walletManagerInstance = new WalletManager({
       wallets: providers,
-      network: "testnet", // Change to "mainnet" for production
+      network: "testnet",
       algod: {
         baseServer: "https://testnet-api.algonode.cloud",
         port: "",
         token: "",
       },
-    });
+    } as any);
 
     return walletManagerInstance;
   },

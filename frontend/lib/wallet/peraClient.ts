@@ -1,1 +1,1 @@
-export * from '../../algorand/peraClient';
+export * from '../algorand/peraClient';
