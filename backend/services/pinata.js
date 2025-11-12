@@ -1,86 +1,76 @@
 // backend/services/pinata.js
-// Pinata IPFS service using pinata-web3
+// IPFS helpers (no SDK dependency)
 
-import { PinataSDK } from "pinata-web3";
+import { create } from 'ipfs-http-client';
+import axios from 'axios';
 
-let pinataClient = null;
-
-/**
- * Get or initialize Pinata client
- */
-function getPinataClient() {
-  if (pinataClient) return pinataClient;
-  
-  const jwt = process.env.PINATA_JWT;
-  if (!jwt) {
-    throw new Error('PINATA_JWT not set in environment');
+function getIpfsClient() {
+  const projectId = process.env.IPFS_PROJECT_ID;
+  const projectSecret = process.env.IPFS_PROJECT_SECRET;
+  if (projectId && projectSecret) {
+    const auth = 'Basic ' + Buffer.from(projectId + ':' + projectSecret).toString('base64');
+    return create({
+      host: process.env.IPFS_HOST || 'ipfs.infura.io',
+      port: Number(process.env.IPFS_PORT || 5001),
+      protocol: process.env.IPFS_PROTOCOL || 'https',
+      headers: { authorization: auth },
+    });
   }
-  
-  pinataClient = new PinataSDK({
-    pinataJwt: jwt,
-    pinataGateway: process.env.PINATA_GATEWAY || 'gateway.pinata.cloud'
-  });
-  
-  return pinataClient;
+  return create({ url: process.env.IPFS_API_URL || 'https://ipfs.infura.io:5001/api/v0' });
 }
 
 /**
- * Upload image buffer to IPFS
- * @param {Buffer} buffer - Image buffer
- * @param {string} filename - Optional filename
- * @returns {Promise<string>} IPFS CID
+ * Upload image buffer to IPFS via ipfs-http-client
  */
 export async function uploadImage(buffer, filename = 'image.png') {
   try {
-    const pinata = getPinataClient();
-    const result = await pinata.upload.file(buffer, {
-      name: filename
-    });
-    return result.IpfsHash || result.cid;
+    const client = getIpfsClient();
+    const { cid } = await client.add(buffer, { pin: true });
+    return cid.toString();
   } catch (error) {
-    console.error('Pinata image upload error:', error);
-    throw new Error(`Failed to upload image to Pinata: ${error.message}`);
+    console.error('IPFS image upload error:', error);
+    throw new Error(`Failed to upload image: ${error.message}`);
   }
 }
 
 /**
- * Upload JSON metadata to IPFS
- * @param {Object} metadata - Metadata object
- * @returns {Promise<string>} IPFS CID
+ * Upload JSON metadata to IPFS (Pinata preferred for pinning)
  */
 export async function uploadJSON(metadata) {
-  try {
-    const pinata = getPinataClient();
-    const result = await pinata.upload.json(metadata);
-    return result.IpfsHash || result.cid;
-  } catch (error) {
-    console.error('Pinata JSON upload error:', error);
-    throw new Error(`Failed to upload JSON to Pinata: ${error.message}`);
+  const jwt = process.env.PINATA_JWT;
+  if (jwt) {
+    // Use Pinata JSON pin endpoint if JWT is configured
+    const url = 'https://api.pinata.cloud/pinning/pinJSONToIPFS';
+    const resp = await axios.post(url, metadata, {
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+      timeout: 15000,
+    });
+    const ipfsHash = resp?.data?.IpfsHash || resp?.data?.cid;
+    if (!ipfsHash) throw new Error('Pinata response missing IpfsHash');
+    return ipfsHash;
   }
+  // Fallback to direct IPFS
+  const client = getIpfsClient();
+  const { cid } = await client.add(JSON.stringify(metadata), { pin: true });
+  return cid.toString();
 }
 
 /**
  * Upload base64 image to IPFS
- * @param {string} base64 - Base64 encoded image (with or without data URL prefix)
- * @param {string} filename - Optional filename
- * @returns {Promise<string>} IPFS CID
  */
 export async function uploadImageFromBase64(base64, filename = 'image.png') {
   try {
-    // Remove data URL prefix if present (e.g., "data:image/png;base64,")
     const base64Data = base64.includes(',') ? base64.split(',')[1] : base64;
     const buffer = Buffer.from(base64Data, 'base64');
     return await uploadImage(buffer, filename);
   } catch (error) {
-    console.error('Pinata base64 upload error:', error);
+    console.error('IPFS base64 upload error:', error);
     throw new Error(`Failed to upload base64 image: ${error.message}`);
   }
 }
 
 /**
  * Upload file from URL (fetches and uploads)
- * @param {string} url - Image URL
- * @returns {Promise<string>} IPFS CID
  */
 export async function uploadImageFromURL(url) {
   try {
@@ -90,10 +80,9 @@ export async function uploadImageFromURL(url) {
       throw new Error(`Failed to fetch image: ${response.statusText}`);
     }
     const buffer = Buffer.from(await response.arrayBuffer());
-    const filename = url.split('/').pop() || 'image.png';
-    return await uploadImage(buffer, filename);
+    return await uploadImage(buffer);
   } catch (error) {
-    console.error('Pinata image upload from URL error:', error);
+    console.error('IPFS image upload from URL error:', error);
     throw new Error(`Failed to upload image from URL: ${error.message}`);
   }
 }

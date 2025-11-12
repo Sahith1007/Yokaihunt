@@ -6,12 +6,12 @@ const ALGOD_TOKEN = process.env.ALGOD_TOKEN || '';
 const INDEXER_URL = process.env.ALGOD_INDEXER || process.env.ALGOD_INDEXER_URL;
 const CREATOR_MNEMONIC = process.env.CREATOR_MNEMONIC;
 
-if (!ALGOD_URL || !INDEXER_URL) throw new Error('ALGOD_URL and ALGOD_INDEXER(_URL) required');
+if (!ALGOD_URL || !INDEXER_URL) console.warn('ALGOD_URL and ALGOD_INDEXER(_URL) not set - chain features disabled');
 if (!CREATOR_MNEMONIC) console.warn('CREATOR_MNEMONIC not set - mint/update will fail');
 
 export const CREATOR_ACCOUNT = CREATOR_MNEMONIC ? algosdk.mnemonicToSecretKey(CREATOR_MNEMONIC) : null;
-export const algodClient = new algosdk.Algodv2(ALGOD_TOKEN, ALGOD_URL, '');
-export const indexerClient = new algosdk.Indexer('', INDEXER_URL, '');
+export const algodClient = ALGOD_URL ? new algosdk.Algodv2(ALGOD_TOKEN, ALGOD_URL, '') : null;
+export const indexerClient = INDEXER_URL ? new algosdk.Indexer('', INDEXER_URL, '') : null;
 
 export async function waitForConfirmation(txId, timeout = 20) {
   const status = await algodClient.status().do();
@@ -27,6 +27,7 @@ export async function waitForConfirmation(txId, timeout = 20) {
 
 export async function mintASA({ metadataUrl, unitName = 'YOKAI', assetName = 'YokaiHunt NFT' }) {
   if (!CREATOR_ACCOUNT) throw new Error('Creator not configured');
+  if (!algodClient) throw new Error('Algod client not configured');
   const params = await algodClient.getTransactionParams().do();
   const txn = algosdk.makeAssetCreateTxnWithSuggestedParamsFromObject({
     from: CREATOR_ACCOUNT.addr,
@@ -51,6 +52,7 @@ export async function mintASA({ metadataUrl, unitName = 'YOKAI', assetName = 'Yo
 }
 
 export async function transferAsset({ assetId, fromSk, fromAddr, toAddr }) {
+  if (!algodClient) throw new Error('Algod client not configured');
   const params = await algodClient.getTransactionParams().do();
   const txn = algosdk.makeAssetTransferTxnWithSuggestedParamsFromObject({
     from: fromAddr,
@@ -67,6 +69,7 @@ export async function transferAsset({ assetId, fromSk, fromAddr, toAddr }) {
 
 export async function updateAssetMetadata({ assetId, newMetadataUrl }) {
   if (!CREATOR_ACCOUNT) throw new Error('Creator not configured');
+  if (!algodClient || !indexerClient) throw new Error('Algorand clients not configured');
   const params = await algodClient.getTransactionParams().do();
   const info = await indexerClient.lookupAssetByID(Number(assetId)).do();
   const unitName = info?.asset?.params?.['unit-name'] || 'YOKAI';
@@ -91,5 +94,7 @@ export async function updateAssetMetadata({ assetId, newMetadataUrl }) {
 }
 
 export async function getAccountAssets(address) {
+  if (!indexerClient) throw new Error('Indexer client not configured');
   const acct = await indexerClient.lookupAccountByID(address).do();
   return acct?.account?.assets || [];
+}

@@ -3,8 +3,6 @@ import cors from "cors";
 import dotenv from "dotenv";
 import http from "http";
 import "./db.js";
-import pokemonRoutes from "./routes/pokemon.js";
-
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -28,29 +26,10 @@ app.use("/api", (req, res, next) => {
 });
 
 // Routes
-app.use("/api", pokemonRoutes);
-import trainerRoutes from "./routes/trainer.js";
-app.use("/api", trainerRoutes);
-import nftRoutes from "./routes/nft2.js";
-app.use("/api", nftRoutes);
-import battleRoutes from "./routes/battle.js";
-app.use("/api", battleRoutes);
 import spawnRoutes from "./routes/spawn.js";
 app.use("/api", spawnRoutes);
-import txRoutes from "./routes/tx.js";
-app.use("/api", txRoutes);
-import captureRoutes from "./routes/capture.js";
-app.use("/api", captureRoutes);
-import playerRoutes from "./routes/player.js";
-app.use("/api", playerRoutes);
-import nftFlowRoutes from "./routes/nftFlow.js";
-app.use("/api", nftFlowRoutes);
-import nftShowcaseRoutes from "./routes/nftShowcase.js";
-app.use("/api", nftShowcaseRoutes);
-import adminPendingUI from "../backend/admin/pendingOrdersUI.js";
-app.use("/", adminPendingUI);
-import gymRoutes from "./routes/gym.js";
-app.use("/api", gymRoutes);
+import nftRegistryRoutes from "./routes/nftRegistry.js";
+app.use("/api", nftRegistryRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

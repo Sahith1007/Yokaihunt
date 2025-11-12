@@ -1,7 +1,12 @@
 {
   "/_app": "pages/_app.js",
+  "/api/trainer/battleResult": "pages/api/trainer/battleResult.js",
+  "/api/trainer/load/[wallet]": "pages/api/trainer/load/[wallet].js",
+  "/collection": "pages/collection.html",
+  "/": "pages/index.html",
+  "/evolve": "pages/evolve.html",
+  "/market": "pages/market.html",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
-  "/": "pages/index.js",
-  "/api/trainer/battleResult": "pages/api/trainer/battleResult.js"
+  "/404": "pages/404.html"
 }
