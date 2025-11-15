@@ -225,4 +225,6 @@ Fetch player NFTs:
 * Faucet: [https://bank.testnet.algorand.network/](https://bank.testnet.algorand.network/)
 * JS SDK Docs: [https://algorand.github.io/js-algorand-sdk/](https://algorand.github.io/js-algorand-sdk/)
 * Algorand Discord: [https://discord.gg/algorand](https://discord.gg/algorand)
+# Testnet Contract deployment link:
+https://lora.algokit.io/testnet/asset/749671836
 
